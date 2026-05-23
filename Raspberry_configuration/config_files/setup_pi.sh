@@ -10,10 +10,34 @@ fi
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
 
-echo "--- 1. Konfiguracja parametrów startowych kernela ---"
-if [ -f "$SCRIPT_DIR/cmdline.txt" ]; then
-    cp "$SCRIPT_DIR/cmdline.txt" /boot/firmware/cmdline.txt
-    echo "Plik cmdline.txt nadpisany."
+echo "--- 1. Bezpieczna konfiguracja parametrów startowych kernela ---"
+CMDLINE_FILE="/boot/firmware/cmdline.txt"
+
+if [ ! -f "$CMDLINE_FILE" ]; then
+    echo "Błąd: Nie znaleziono pliku $CMDLINE_FILE!"
+else
+    cp "$CMDLINE_FILE" "${CMDLINE_FILE}.bak"
+    echo "Utworzono kopię zapasową w ${CMDLINE_FILE}.bak"
+
+    # Lista dodatkowych parametrów z Twojego starego pliku
+    PARAMS_TO_ADD=(
+        "quiet"
+        "splash"
+        "plymouth.ignore-serial-consoles"
+        "cfg80211.ieee80211_regdom=PL"
+    )
+
+    for param in "${PARAMS_TO_ADD[@]}"; do
+        # Sprawdzamy, czy parametr znajduje się już w pliku (-q wycisza wyjście, -w szuka całego słowa)
+        if ! grep -q -w "$param" "$CMDLINE_FILE"; then
+            sed -i "1 s/$/ $param/" "$CMDLINE_FILE"
+            echo "Dodano parametr: $param"
+        else
+            echo "Parametr $param już istnieje, pomijam."
+        fi
+    done
+    
+    echo "Konfiguracja cmdline.txt zakończona sukcesem."
 fi
 
 echo "--- 2. Konfiguracja sprzętowa ---"
@@ -38,11 +62,13 @@ fi
 echo "--- 4. Konfiguracja grup użytkownika ---"
 if [ -f "$SCRIPT_DIR/user_groups.txt" ]; then
     USER_LINE=$(cat "$SCRIPT_DIR/user_groups.txt")
-    USERNAME=$(echo "$USER_LINE" | awk -F' : ' '{print $1}' | tr -d ' ')
-    GROUPS=$(echo "$USER_LINE" | awk -F' : ' '{print $2}' | tr ' ' ',')
-    
+    USERNAME=$(echo "$USER_LINE" | awk -F': ' '{print $1}' | tr -d ' ')
+    GROUPS=$(echo "$USER_LINE" | awk -F': ' '{print $2}' )
+    echo "Grupy uzytkownika: $GROUPS"
+    echo "Obecny użytkownik: $USERNAME"
     if ! id -u "$USERNAME" > /dev/null 2>&1; then
         useradd -m -s /bin/bash "$USERNAME"
+        echo "$USERNAME:raspi" | chpasswd
         echo "Utworzono nowego użytkownika: $USERNAME"
     fi
     usermod -aG "$GROUPS" "$USERNAME"
@@ -51,7 +77,21 @@ else
     echo "Błąd: Brak pliku user_groups.txt"
 fi
 
+echo "--- 5. Konfiguracja reguł udev (porty UART) ---"
+UDEV_SOURCE="$SCRIPT_DIR/99-tty-raw.rules"
+UDEV_DEST="/etc/udev/rules.d/99-tty-raw.rules"
 
+if [ -f "$UDEV_SOURCE" ]; then
+    cp "$UDEV_SOURCE" "$UDEV_DEST"
+    chmod 644 "$UDEV_DEST"
+    echo "Skopiowano reguły udev do $UDEV_DEST"
+    
+    udevadm control --reload-rules
+    udevadm trigger
+    echo "Przeładowano i zaaplikowano reguły udev."
+else
+    echo "Błąd: Nie znaleziono pliku 99-tty-raw.rules w katalogu skryptu!"
+fi
 
 
 USER_HOME="/home/$USERNAME"
@@ -65,6 +105,7 @@ sudo -u "$USERNAME" bash -c "
     source ./venvMavlink/bin/activate
     echo "aktywowano środowisko wirtualne"
     pip install -r '$SCRIPT_DIR/requirements.txt'
+
 "
 
 echo "--- ZAKOŃCZONO ---"
