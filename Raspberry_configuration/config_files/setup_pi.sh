@@ -9,17 +9,28 @@ fi
 # Pobranie bezwzględnej ścieżki katalogu repozytorium
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
+# Dynamiczne wykrywanie użytkownika, który uruchomił skrypt przez sudo
+if [ -n "$SUDO_USER" ]; then
+    CURRENT_USER="$SUDO_USER"
+    USER_HOME="/home/$CURRENT_USER"
+else
+    # Failback, jeśli skrypt uruchomiono bezpośrednio z konta root
+    CURRENT_USER="root"
+    USER_HOME="/root"
+fi
+
+echo "========================================================"
+echo "Konfiguracja systemu dla użytkownika: $CURRENT_USER"
+echo "Katalog domowy: $USER_HOME"
+echo "========================================================"
 
 echo "--- 1. Bezpieczna konfiguracja parametrów startowych kernela ---"
 CMDLINE_FILE="/boot/firmware/cmdline.txt"
-
-if [ ! -f "$CMDLINE_FILE" ]; then
-    echo "Błąd: Nie znaleziono pliku $CMDLINE_FILE!"
-else
+if [ -f "$CMDLINE_FILE" ]; then
     cp "$CMDLINE_FILE" "${CMDLINE_FILE}.bak"
     echo "Utworzono kopię zapasową w ${CMDLINE_FILE}.bak"
 
-    # Lista dodatkowych parametrów z Twojego starego pliku
+    # Parametry do dodania (wyciszenie bootowania + region WiFi)
     PARAMS_TO_ADD=(
         "quiet"
         "splash"
@@ -28,7 +39,6 @@ else
     )
 
     for param in "${PARAMS_TO_ADD[@]}"; do
-        # Sprawdzamy, czy parametr znajduje się już w pliku (-q wycisza wyjście, -w szuka całego słowa)
         if ! grep -q -w "$param" "$CMDLINE_FILE"; then
             sed -i "1 s/$/ $param/" "$CMDLINE_FILE"
             echo "Dodano parametr: $param"
@@ -36,91 +46,67 @@ else
             echo "Parametr $param już istnieje, pomijam."
         fi
     done
-    
-    echo "Konfiguracja cmdline.txt zakończona sukcesem."
+else
+    echo "Błąd: Nie znaleziono pliku $CMDLINE_FILE"
 fi
 
-echo "--- 2. Konfiguracja sprzętowa ---"
+usermod -aG dialout,gpio,i2c,spi "$CURRENT_USER"
+
+echo "--- 2. Konfiguracja sprzętowa (config.txt) ---"
 if [ -f "$SCRIPT_DIR/config.txt" ]; then
     cp "$SCRIPT_DIR/config.txt" /boot/firmware/config.txt
     echo "Plik config.txt nadpisany."
+else
+    echo "Ostrzeżenie: Brak pliku config.txt w katalogu skryptu."
 fi
 
-echo "--- 3. Instalacja wymaganych pakietów ---"
-if [ -f "$SCRIPT_DIR/manual_packages.txt" ]; then
+echo "--- 3. Instalacja wymaganych pakietów APT ---"
+if [ -f "$SCRIPT_DIR/apt_packages.txt" ]; then
     apt-get update
     PACKAGES=$(tr '\n' ' ' < "$SCRIPT_DIR/apt_packages.txt")
-    # Dodano pakiety python3-venv i python3-pip niezbędne do utworzenia środowiska wirtualnego
     apt-get install -y $PACKAGES
     echo "Pakiety zainstalowane."
-    sudo apt-get remove modemmanager -y
-    echo "Odinstalowano modemanager"
+    
+    # Usunięcie konfliktu z portami szeregowymi
+    if dpkg -s modemmanager >/dev/null 2>&1; then
+        apt-get remove modemmanager -y
+        echo "Odinstalowano modemmanager (częsty konflikt z UART drona)."
+    fi
 else
     echo "Błąd: Brak pliku apt_packages.txt"
 fi
 
-echo "--- 4. Konfiguracja grup użytkownika ---"
-if [ -f "$SCRIPT_DIR/user_groups.txt" ]; then
-    USER_LINE=$(cat "$SCRIPT_DIR/user_groups.txt")
-    USERNAME=$(echo "$USER_LINE" | awk -F': ' '{print $1}' | tr -d ' ')
-    GROUPS=$(echo "$USER_LINE" | awk -F': ' '{print $2}' )
-    echo "Grupy uzytkownika: $GROUPS"
-    echo "Obecny użytkownik: $USERNAME"
-    if ! id -u "$USERNAME" > /dev/null 2>&1; then
-        useradd -m -s /bin/bash "$USERNAME"
-        echo "$USERNAME:raspi" | chpasswd
-        echo "Utworzono nowego użytkownika: $USERNAME"
-    fi
-    usermod -aG "$GROUPS" "$USERNAME"
-    echo "Grupy zostały zaktualizowane."
-else
-    echo "Błąd: Brak pliku user_groups.txt"
-fi
-
-echo "--- 5. Konfiguracja reguł udev (porty UART) ---"
+echo "--- 4. Konfiguracja reguł udev dla portów szeregowych UART ---"
 UDEV_SOURCE="$SCRIPT_DIR/99-tty-raw.rules"
 UDEV_DEST="/etc/udev/rules.d/99-tty-raw.rules"
 
 if [ -f "$UDEV_SOURCE" ]; then
     cp "$UDEV_SOURCE" "$UDEV_DEST"
     chmod 644 "$UDEV_DEST"
-    echo "Skopiowano reguły udev do $UDEV_DEST"
-
     udevadm control --reload-rules
     udevadm trigger
-    echo "Przeładowano i zaaplikowano reguły udev."
+    echo "Reguły udev zostały zaaplikowane."
 else
-    echo "Błąd: Nie znaleziono pliku 99-tty-raw.rules w katalogu skryptu!"
+    echo "Ostrzeżenie: Brak pliku 99-tty-raw.rules, pomijam udev."
 fi
 
-echo "--- 6. Konfiguracja bezhasłowego sudo dla użytkownika $USERNAME ---"
-SUDOERS_FILE="/etc/sudoers.d/010_$USERNAME-nopasswd"
-
-if [ ! -f "$SUDOERS_FILE" ]; then
-    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_FILE"
-    # Pliki w sudoers.d BEZWZGLĘDNIE muszą mieć uprawnienia 0440, 
-    # w przeciwnym razie system zablokuje całe sudo!
-    chmod 0440 "$SUDOERS_FILE"
-    echo "Dodano bezhasłowe sudo dla użytkownika $USERNAME."
+echo "--- 5. Tworzenie środowiska wirtualnego Pythona (Mavlink) ---"
+if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
+    # Uruchomienie bloku komend jako zalogowany użytkownik (np. pi5), a nie jako root!
+    sudo -u "$CURRENT_USER" bash -c "
+        mkdir -p '$USER_HOME/Mavlink'
+        cd '$USER_HOME/Mavlink'
+        python3 -m venv venvMavlink
+        source ./venvMavlink/bin/activate
+        echo 'Aktywowano środowisko wirtualne venvMavlink.'
+        pip install --upgrade pip
+        pip install -r '$SCRIPT_DIR/requirements.txt'
+    "
+    echo "Środowisko wirtualne i zależności zostały pomyślnie skonfigurowane."
 else
-    echo "Plik $SUDOERS_FILE już istnieje. Pomijam."
+    echo "Błąd: Brak pliku requirements.txt"
 fi
 
-USER_HOME="/home/$USERNAME"
-echo "Tworzenie wirtualnego środowiska w $USER_HOME/Mavlink..."
-# Wykonanie komend w imieniu użytkownika (np. pi5), a nie jako root!
-sudo -u "$USERNAME" bash -c "
-    mkdir -p $USER_HOME/Mavlink
-    cd $USER_HOME/Mavlink
-    python3 -m venv venvMavlink
-    chmod u+x ./venvMavlink/bin/activate
-    source ./venvMavlink/bin/activate
-    echo "aktywowano środowisko wirtualne"
-    pip install -r '$SCRIPT_DIR/requirements.txt'
-
-"
-
-echo "--- ZAKOŃCZONO ---"
-echo "Zależności Pythona zostały zainstalowane. Aby zastosować wszystkie zmiany, wykonaj:"
+echo "--- ZAKOŃCZONO SUKCESEM ---"
+echo "Wszystkie operacje zostały wykonane. Aby zastosować zmiany sprzętowe, zrestartuj Raspberry Pi:"
 echo "sudo reboot"
-
