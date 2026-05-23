@@ -85,7 +85,7 @@ if [ -f "$UDEV_SOURCE" ]; then
     cp "$UDEV_SOURCE" "$UDEV_DEST"
     chmod 644 "$UDEV_DEST"
     echo "Skopiowano reguły udev do $UDEV_DEST"
-    
+
     udevadm control --reload-rules
     udevadm trigger
     echo "Przeładowano i zaaplikowano reguły udev."
@@ -93,6 +93,18 @@ else
     echo "Błąd: Nie znaleziono pliku 99-tty-raw.rules w katalogu skryptu!"
 fi
 
+echo "--- 6. Konfiguracja bezhasłowego sudo dla użytkownika $USERNAME ---"
+SUDOERS_FILE="/etc/sudoers.d/010_$USERNAME-nopasswd"
+
+if [ ! -f "$SUDOERS_FILE" ]; then
+    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_FILE"
+    # Pliki w sudoers.d BEZWZGLĘDNIE muszą mieć uprawnienia 0440, 
+    # w przeciwnym razie system zablokuje całe sudo!
+    chmod 0440 "$SUDOERS_FILE"
+    echo "Dodano bezhasłowe sudo dla użytkownika $USERNAME."
+else
+    echo "Plik $SUDOERS_FILE już istnieje. Pomijam."
+fi
 
 USER_HOME="/home/$USERNAME"
 echo "Tworzenie wirtualnego środowiska w $USER_HOME/Mavlink..."
