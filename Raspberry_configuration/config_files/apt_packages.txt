@@ -348,6 +348,7 @@ libcamera-v4l2:arm64
 libcamera0.7:arm64
 libcanberra0:arm64
 libcap-ng0:arm64
+libcap-dev
 libcap2:arm64
 libcap2-bin
 libcapstone5:arm64
@@ -1550,6 +1551,7 @@ systemd-sysv
 systemd-timesyncd
 systemd-zram-generator
 sysvinit-utils
+swig
 tar
 thonny
 timgm6mb-soundfont
