@@ -193,7 +193,13 @@ class MatekService:
             "param5": 0, "param6": 0, "param7": 0}
 
         
-        command_map = {"WAYPOINT": 16, "SET_SERVO": 183, "TAKEOFF": 22}  # Map custom command names to MAVLink command IDs
+        command_map = {
+            "WAYPOINT": 16,
+            "SET_SERVO": 183,
+            "TAKEOFF": 22,
+            "NAV_LOITER_UNLIM": mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
+            "NAV_LOITER_TIME": mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
+        }
 
         all_waypoints = [home] + waypoints
         
@@ -287,9 +293,47 @@ class MatekService:
                         0, 0,
                         wp["alt"]
                     )
-                # jeśli planujemy ręcznie dodawać inne typy komend do misji, należy je zdefiniować tutaj ręcznie
-            
-
+                elif cmd == mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM:
+                    # param3: radius [m] (+ CW, - CCW), param4: yaw [deg]
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                        mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
+                        is_current,
+                        1,
+                        0,
+                        0,
+                        wp.get("radius", 0),
+                        wp.get("yaw", 0),
+                        int(wp["lat"] * 1e7),
+                        int(wp["lon"] * 1e7),
+                        wp["alt"]
+                    )
+                elif cmd == mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME:
+                    # param1: loiter time [s], param3: radius, param4: yaw
+                    if "time" not in wp:
+                        self.logger.error(
+                            f"NAV_LOITER_TIME requires 'time' (seconds) in waypoint {i}"
+                        )
+                        return False
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                        mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
+                        is_current,
+                        1,
+                        wp["time"],
+                        0,
+                        wp.get("radius", 0),
+                        wp.get("yaw", 0),
+                        int(wp["lat"] * 1e7),
+                        int(wp["lon"] * 1e7),
+                        wp["alt"]
+                    )
                 else:
                     self.logger.error(f"Unknown command in waypoint {i}: {wp['command']}")
                     return False
