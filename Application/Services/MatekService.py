@@ -836,6 +836,26 @@ class MatekService:
         )
         self.logger.info(f"Zażądano MISSION_CURRENT z częstotliwością {hz}Hz ({interval_us}us)")
 
+    def set_message_rate(self, message_id: int, hz: float) -> None:
+        """Ustawia częstotliwość wysyłania wybranej wiadomości MAVLink."""
+        interval_us = int(1e6 / hz)
+        self.master.mav.command_long_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,
+            message_id,
+            interval_us,
+            0, 0, 0, 0,
+            0,
+        )
+        self.logger.info(f"Zażądano message_id={message_id} z częstotliwością {hz}Hz ({interval_us}us)")
+
+    def set_telemetry_rate(self, hz: float = 10) -> None:
+        """Ustawia częstotliwość GPS (GLOBAL_POSITION_INT) i ATTITUDE."""
+        self.set_message_rate(33, hz)  # GLOBAL_POSITION_INT
+        self.set_message_rate(30, hz)  # ATTITUDE
+
     def close(self) -> None:
         """
         Closes the MAVLink connection.
