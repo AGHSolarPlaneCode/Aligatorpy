@@ -1,8 +1,7 @@
 import os
 import sys
-import threading
 import time
-from queue import Queue
+from multiprocessing import Event, Process, Queue
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -30,9 +29,9 @@ def main():
     drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
     drone.set_mission_current_rate(10)
 
-    stop_event = threading.Event()
+    stop_event = Event()
     results_queue = Queue()
-    pipeline_thread = None
+    pipeline_process = None
     pipeline_started = False
     targets = []
 
@@ -44,11 +43,11 @@ def main():
             if curr_wp == start_wp and not pipeline_started:
                 pipeline_started = True
                 logger.info(
-                    f"Reached waypoint {curr_wp}, starting detection pipeline "
+                    f"Reached waypoint {curr_wp}, starting detection pipeline process "
                     f"on {cfg.mav.device2}"
                 )
 
-                pipeline_thread = threading.Thread(
+                pipeline_process = Process(
                     target=run_led_detection_pipeline,
                     kwargs={
                         "stop_event": stop_event,
@@ -60,7 +59,7 @@ def main():
                     },
                     daemon=True,
                 )
-                pipeline_thread.start()
+                pipeline_process.start()
 
             if pipeline_started and curr_wp >= stop_wp:
                 logger.info(f"Reached waypoint {curr_wp}, stopping detection pipeline")
@@ -69,8 +68,10 @@ def main():
 
             time.sleep(0.2)
 
-        if pipeline_thread is not None:
-            pipeline_thread.join(timeout=15)
+        if pipeline_process is not None:
+            pipeline_process.join(timeout=15)
+            if pipeline_process.is_alive():
+                logger.warning("Pipeline process still alive after timeout")
             if not results_queue.empty():
                 targets = results_queue.get()
 

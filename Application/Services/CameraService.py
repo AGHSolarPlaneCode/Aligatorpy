@@ -35,7 +35,7 @@ class CameraService:
         self.LOG_FILE = self.PHOTOS_MISSION_DIR / 'photos_position.csv'
         self.resolution = cfg.camera.resolution
         if drone is None:
-            self.drone = MatekService(device = "/dev/ttyAMA3", baud = cfg.mav.baud)     #TODO zmień to w uj
+            self.drone = MatekService(device = cfg.mav.device2, baud = cfg.mav.baud)     #TODO zmień to w uj
         else:
             self.drone = drone
 

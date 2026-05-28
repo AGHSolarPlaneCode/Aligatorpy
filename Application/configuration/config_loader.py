@@ -11,6 +11,7 @@ from Application.calc_drop_translation.core_math import run_preflight_simulation
 @dataclass(frozen=True)
 class MAVLinkConfig:
     device: str
+    device2: str
     baud: int
     mav_version: int
 
@@ -79,6 +80,7 @@ class Config:
             mav = data["mavlink"]
             self.mav = MAVLinkConfig(
                 device=mav["device"],
+                device2=mav.get("device2", mav["device"]),
                 baud=mav["baud"],
                 mav_version=mav["mav_version"]
             )

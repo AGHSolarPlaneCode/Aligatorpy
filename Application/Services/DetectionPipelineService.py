@@ -166,7 +166,8 @@ def run_led_detection_pipeline(
         p.join()
         targets = results.get()
     """
-    drone = MatekService(device=device or cfg.mav.device, baud=baud or cfg.mav.baud)
+    pipeline_device = device or cfg.mav.device2
+    drone = MatekService(device=pipeline_device, baud=baud or cfg.mav.baud)
     pipeline = DetectionPipelineService(drone=drone, fps=fps)
     try:
         targets = pipeline.run(
