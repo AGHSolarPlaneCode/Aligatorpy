@@ -13,9 +13,8 @@ class MissionService:
     """
     Args:
         drone: MatekService object instance
-        resolution: (width, height)
     """
-    def __init__(self, drone: MatekServic):
+    def __init__(self, drone: MatekService):
         self.logger = get_logger(__name__)
         self.image_width, self.image_height = cfg.camera.resolution
 
@@ -137,7 +136,7 @@ class MissionService:
         if res is None:
             return False
         lat, lon = res
-        if not self.isinPolygon(lat, lon, self.GEOFENCE):
+        if not self.isinPolygon(lat, lon, search_zone):
             return False
         if not self.is_target(lat, lon):
             self.insert_target(lat, lon, isBottle)
@@ -184,7 +183,7 @@ class MissionService:
         d_east = x_trans * math.sin(yaw_rad) + y_trans * math.cos(yaw_rad)
 
         # Pobieramy precyzyjne przeliczniki dla tego konkretnego miejsca
-        m_per_lat, m_per_lon = self.get_meters_per_degree(lat_center)
+        m_per_lat, m_per_lon = MissionService.get_meters_per_degree(lat_center)
 
         delta_lat = d_north / m_per_lat
         delta_lon = d_east / m_per_lon
@@ -294,7 +293,7 @@ class MissionService:
     @staticmethod
     def get_distance_meters(lat1, lon1, lat2, lon2):
         """Oblicza dystans w metrach między dwoma punktami (uproszczony rzut płaski)."""
-        m_per_lat, m_per_lon = self.get_meters_per_degree(lat1)
+        m_per_lat, m_per_lon = MissionService.get_meters_per_degree(lat1)
         dy = (lat1 - lat2) * m_per_lat
         dx = (lon1 - lon2) * m_per_lon
         return math.sqrt(dx*dx + dy*dy)
@@ -313,7 +312,7 @@ class MissionService:
                 line = line.strip()
                 if line.startswith('#') or not line:
                     continue
-                lat_str, lon_str = line.split(' ')
+                lat_str, lon_str = line.split()
                 polygon.append((float(lat_str), float(lon_str)))
         return polygon
 
