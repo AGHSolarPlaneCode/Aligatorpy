@@ -850,6 +850,25 @@ class MatekService:
             0,
         )
         self.logger.info(f"Zażądano message_id={message_id} z częstotliwością {hz}Hz ({interval_us}us)")
+    def set_speed(self, speed_mps: float, speed_type: int = 0,            # <<< ADDED
+                  throttle: float = -1.0) -> None:                        # <<< ADDED
+        """                                                               # <<< ADDED
+        Zmienia prędkość lotu (MAV_CMD_DO_CHANGE_SPEED).                  # <<< ADDED
+        speed_type: 0 = airspeed, 1 = groundspeed.                       # <<< ADDED
+        throttle = -1 -> bez zmiany throttle.                            # <<< ADDED
+        """                                                               # <<< ADDED
+        self.master.mav.command_long_send(                                # <<< ADDED
+            self.master.target_system,                                    # <<< ADDED
+            self.master.target_component,                                 # <<< ADDED
+            mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,                       # <<< ADDED
+            0,                                                            # <<< ADDED
+            speed_type,                                                   # <<< ADDED
+            float(speed_mps),                                             # <<< ADDED
+            float(throttle),                                              # <<< ADDED
+            0, 0, 0, 0,                                                   # <<< ADDED
+        )                                                                 # <<< ADDED
+        self.logger.info(f"Zażądano prędkości {speed_mps} m/s "          # <<< ADDED
+                         f"(type={speed_type})")                     
 
     def set_telemetry_rate(self, hz: float = 10) -> None:
         """Ustawia częstotliwość GPS (GLOBAL_POSITION_INT) i ATTITUDE."""

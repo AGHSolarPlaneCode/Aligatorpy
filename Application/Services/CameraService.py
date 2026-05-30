@@ -255,6 +255,24 @@ class CameraService:
 
             if max_frames is not None and frame_count >= max_frames:
                 break
+    def configure_for_ook(self, size=None, fps=120, exposure_us=2000):    # <<< ADDED
+        """Tryb wideo do dekodowania OOK: wyższe fps, krótka ekspozycja.""" # <<< ADDED
+        size = size or (640, 480)                                          # <<< ADDED
+        self.picam.stop()                                                  # <<< ADDED
+        config = self.picam.create_video_configuration(                    # <<< ADDED
+            main={"size": size, "format": "RGB888"})                       # <<< ADDED
+        config["controls"] = {"FrameRate": fps}                            # <<< ADDED
+        self.picam.configure(config)                                       # <<< ADDED
+        self.picam.start()                                                 # <<< ADDED
+        self.picam.set_controls({                                          # <<< ADDED
+            "ExposureTime": exposure_us,                                   # <<< ADDED
+            "AfMode": 0,                                                   # <<< ADDED
+            "LensPosition": 0.0,                                           # <<< ADDED
+            "AfRange": 0,                                                  # <<< ADDED
+        })                                                                 # <<< ADDED
+        self.logger.info(                                                  # <<< ADDED
+            f"Camera OOK mode: {size[0]}x{size[1]} @ {fps}fps, "           # <<< ADDED
+            f"exposure={exposure_us}us")   
 
 
                 

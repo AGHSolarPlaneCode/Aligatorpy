@@ -15,7 +15,7 @@ class MissionService:
         drone: MatekService object instance
         resolution: (width, height)
     """
-    def __init__(self, drone: MatekServic):
+    def __init__(self, drone: MatekService):
         self.logger = get_logger(__name__)
         self.image_width, self.image_height = cfg.camera.resolution
 
@@ -123,7 +123,7 @@ class MissionService:
     def insert_target(self, lat, lon, isBottle: bool):
         self.TRG_CANDIDATES.append({"lat": lat, "lon": lon, "count": 1, "isBottle": isBottle})
 
-    def process_target(self, pixel, isBottle: bool, search_zone)-> bool:
+    def process_target(self, pixel, isBottle: bool, search_zone) -> bool:
         msg_gps = self.drone.get_current_coordinates()
         if msg_gps is None:
             return None
@@ -137,7 +137,9 @@ class MissionService:
         if res is None:
             return False
         lat, lon = res
-        if not self.isinPolygon(lat, lon, self.GEOFENCE):
+
+        zone = search_zone if search_zone is not None else getattr(self, "GEOFENCE", None)
+        if zone is not None and not self.isinPolygon(lat, lon, zone):                      
             return False
         if not self.is_target(lat, lon):
             self.insert_target(lat, lon, isBottle)
@@ -294,7 +296,7 @@ class MissionService:
     @staticmethod
     def get_distance_meters(lat1, lon1, lat2, lon2):
         """Oblicza dystans w metrach między dwoma punktami (uproszczony rzut płaski)."""
-        m_per_lat, m_per_lon = self.get_meters_per_degree(lat1)
+        m_per_lat, m_per_lon = MissionService.get_meters_per_degree(lat1)
         dy = (lat1 - lat2) * m_per_lat
         dx = (lon1 - lon2) * m_per_lon
         return math.sqrt(dx*dx + dy*dy)
