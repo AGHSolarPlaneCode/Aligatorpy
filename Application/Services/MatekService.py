@@ -18,7 +18,7 @@ class MatekService:
     
     """
     Example usage:
-    # Initialize connection\n
+    # Initialize connection
     drone = MatekService()
 
     
@@ -744,6 +744,28 @@ class MatekService:
         pitch = msg_att.pitch
         yaw = msg_att.yaw
         return roll, pitch, yaw
+
+
+    def send_landing_sites(master, sites: list[tuple[float, float]]):
+    master.mav.statustext_send(
+        mavutil.mavlink.MAV_SEVERITY_INFO,
+        "LANDING_START".encode()
+    )
+    time.sleep(0.1)
+
+    for lat, lon in sites:
+        msg = f"LANDING:{lat},{lon}"
+        master.mav.statustext_send(
+            mavutil.mavlink.MAV_SEVERITY_INFO,
+            msg.encode()
+        )
+        time.sleep(0.1)
+
+    master.mav.statustext_send(
+        mavutil.mavlink.MAV_SEVERITY_INFO,
+        "LANDING_END".encode()
+    )
+    print("[DRONE] Wysłano lądowiska.")
     
     def monitor_all(self, update_interval: int = 2) -> None:
         """
