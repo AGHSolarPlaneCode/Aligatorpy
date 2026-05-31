@@ -746,27 +746,28 @@ class MatekService:
         return roll, pitch, yaw
 
 
-    def send_landing_sites(master, sites: list[tuple[float, float]]):
-    master.mav.statustext_send(
-        mavutil.mavlink.MAV_SEVERITY_INFO,
-        "LANDING_START".encode()
-    )
-    time.sleep(0.1)
-
-    for lat, lon in sites:
-        msg = f"LANDING:{lat},{lon}"
-        master.mav.statustext_send(
+    def send_landing_sites(self, sites: list[tuple[float, float]]):
+        self.master.mav.statustext_send(
             mavutil.mavlink.MAV_SEVERITY_INFO,
-            msg.encode()
+            "LANDING_START".encode()
         )
         time.sleep(0.1)
 
-    master.mav.statustext_send(
-        mavutil.mavlink.MAV_SEVERITY_INFO,
-        "LANDING_END".encode()
-    )
-    print("[DRONE] Wysłano lądowiska.")
-    
+        for lat, lon in sites:
+            msg = f"LANDING:{lat},{lon}"
+            self.master.mav.statustext_send(
+                mavutil.mavlink.MAV_SEVERITY_INFO,
+                msg.encode()
+            )
+            time.sleep(0.1)
+
+        self.master.mav.statustext_send(
+            mavutil.mavlink.MAV_SEVERITY_INFO,
+            "LANDING_END".encode()
+        )
+        print("[DRONE] Wysłano lądowiska")
+
+
     def monitor_all(self, update_interval: int = 2) -> None:
         """
         Monitors mission progress in real-time.
