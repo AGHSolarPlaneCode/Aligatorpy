@@ -10,13 +10,9 @@ Sprawdza w symulacji:
 NIE używa kamery ani workera. W miejscu pomiaru OOK wypisuje 'CAPTURE LED i'.
 
 Diody są na sztywno (10 szt.) – leżą wewnątrz glowice_dron.poly, >=10 m od siebie.
-Geofence ustaw w Mission Plannerze (instrukcja osobno), nie w tym kodzie.
-
-ArduCopter SITL z HOME w polu (Polska!), np.:
-    sim_vehicle.py -v ArduCopter --console --map --custom-location=50.27099,18.67429,200,0
 
 Uruchomienie:
-    python test_mission_sitl.py --device udp:127.0.0.1:14550
+    python test_mission_sitl.py --device tcp:XXXXX:XXXX
 """
 from __future__ import annotations
 
@@ -26,21 +22,18 @@ import time
 from typing import Dict, List
 
 from Application.Services.MatekService import MatekService
-
-# ====================================================================== #
 #  Diody na sztywno – wewnątrz glowice_dron.poly, rozrzucone, >=10 m od siebie.
-# ====================================================================== #
 DIODES: List[Dict] = [
     {"lat": 50.271077, "lon": 18.672761, "isBottle": True},
-    {"lat": 50.271422, "lon": 18.672847, "isBottle": False},
+    {"lat": 50.271422, "lon": 18.672847, "isBottle": True},
     {"lat": 50.270948, "lon": 18.673503, "isBottle": True},
-    {"lat": 50.271291, "lon": 18.673595, "isBottle": False},
+    {"lat": 50.271291, "lon": 18.673595, "isBottle": True},
     {"lat": 50.270819, "lon": 18.674244, "isBottle": True},
-    {"lat": 50.271161, "lon": 18.674343, "isBottle": False},
+    {"lat": 50.271161, "lon": 18.674343, "isBottle": True},
     {"lat": 50.270691, "lon": 18.674985, "isBottle": True},
-    {"lat": 50.271031, "lon": 18.675091, "isBottle": False},
+    {"lat": 50.271031, "lon": 18.675091, "isBottle": True},
     {"lat": 50.270562, "lon": 18.675726, "isBottle": True},
-    {"lat": 50.270901, "lon": 18.675839, "isBottle": False},
+    {"lat": 50.270901, "lon": 18.675839, "isBottle": True},
 ]
 
 # Trasa przeszukiwania (W -> E, przez całe pole).
@@ -97,7 +90,7 @@ def wait_item_reached(drone, target_seqs, timeout):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="udp:127.0.0.1:14550")
+    ap.add_argument("--device", default="tcp:192.168.126.8:5763")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--alt", type=float, default=50.0)
     ap.add_argument("--hover", type=float, default=8.0)
