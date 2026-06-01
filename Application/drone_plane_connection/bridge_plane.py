@@ -1,144 +1,107 @@
 """
-Część samolotowa komunikacji do obsługi połączenia samolot-dron
-
-Pakiety mavlink są przekierowane po tcp z laptopa obsługującego drona do laptopa samolotowego. Laptop samolotowy po otrzymaniu pakietu współrzędnych lądowisk wykonuje funkcje
+Część samolotowa komunikacji do obsługi połączenia samolot-dron.
 
 Użycie:
-  python plane_bridge.py --listen-port 5763 --forward-host 172.20.10.2 --forward-port 5764 --plane-device tcp:localhost:5761
+  python plane_bridge.py --listen-port 5765 --plane-device tcp:localhost:5761
 
-  --listen-port   : port na którym nasłuchujemy (od laptopa dronowego)
-  --forward-host  : IP laptopa dronowego
-  --forward-port  : port laptopa dronowego
-  --plane-device  : połączenie do autopilota samolotu np. tcp:localhost:5761
+  --listen-port  : port na którym nasłuchujemy (MP dronowy tu wysyła Outbound)
+  --plane-device : połączenie do autopilota samolotu np. tcp:localhost:5761
 """
-
-import socket
-import threading
 import argparse
 import sys
+import time
 from pymavlink import mavutil
 from Application.Services.MatekService import MatekService
+from Application.Services.MissionService import MissionService
 
 landing_sites = []
 collecting = False
-plane: MatekService = None
-stop_event = threading.Event()
-
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Plane MAVLink Bridge")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--listen-port", type=int, required=True)
-    parser.add_argument("--forward-host", type=str, required=True)
-    parser.add_argument("--forward-port", type=int, required=True)
-    parser.add_argument("--plane-device", type=str, required=True,
-                        help="Połączenie do autopilota samolotu np. tcp:localhost:5761")
+    parser.add_argument("--plane-device", type=str, required=True)
     parser.add_argument("--plane-baud", type=int, default=57600)
     return parser.parse_args()
 
-
-def handle_landing():
-    global plane, mission
-
+def handle_landing(mission):
     if not landing_sites:
         print("[LANDING] Brak lądowisk")
         return
 
-    mission.process_landing_sites(landing_sites)
-    print("[LANDING] Gotowe")
+    try:
+        mission.process_landing_sites(landing_sites)
+        print("[LANDING] Gotowe")
+    except Exception as e:
+        print(f"[LANDING] Błąd: {type(e).__name__}: {e}")
 
-def mavlink_listener(plane_device, plane_baud):
-    global landing_sites, collecting, plane
-
-    print(f"[MAVLink] Łączę się z autopilotem: {plane_device}")
-    plane = MatekService(device=plane_device, baud=plane_baud)
-    print(f"[MAVLink] Połączono z autopilotem")
-
-    while not stop_event.is_set():
-        msg = plane.master.recv_match(type='STATUSTEXT', blocking=True, timeout=1)
-        if not msg:
-            continue
-
-        text = msg.text.strip()
-        print(f"[STATUSTEXT] {text}")
-
-        if text == "LANDING_START":
-            landing_sites = []
-            collecting = True
-            print("[LANDING] Start zbierania lądowisk")
-
-        elif text.startswith("LANDING:") and collecting:
-            try:
-                _, coords = text.split(":")
-                lat, lon = map(float, coords.split(","))
-                landing_sites.append((lat, lon))
-                print(f"[LANDING] Dodano: {lat}, {lon}")
-            except Exception as e:
-                print(f"[LANDING] Błąd parsowania: {text} -> {e}")
-
-        elif text == "LANDING_END" and collecting:
-            collecting = False
-            print("[LANDING] Koniec zbierania lądowisk")
-            handle_landing()
-
-
-def forward(src, dst):
-    src.settimeout(1.0)
-    while not stop_event.is_set():
-        try:
-            data = src.recv(4096)
-            if not data:
-                break
-            dst.sendall(data)
-        except socket.timeout:
-            continue
-        except:
-            break
-
-
-def tcp_bridge(listen_port, forward_host, forward_port):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.settimeout(1.0)
-    server.bind(("0.0.0.0", listen_port))
-    server.listen(1)
-    print(f"[Bridge] Nasłuchuję na porcie {listen_port}...")
-
-    mp = None
-    while not stop_event.is_set():
-        try:
-            mp, addr = server.accept()
-            break
-        except socket.timeout:
-            continue
-
-    if mp is None:
-        return
-
-    print("[Bridge] Mission Planner połączony")
-
-    remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    remote.connect((forward_host, forward_port))
-    print(f"[Bridge] Połączono z {forward_host}:{forward_port}")
-
-    threading.Thread(target=forward, args=(mp, remote), daemon=True).start()
-    forward(remote, mp)
-
-
-if __name__ == "__main__":
+def main():
+    global landing_sites, collecting
     args = parse_args()
 
-    t = threading.Thread(
-        target=mavlink_listener,
-        args=(args.plane_device, args.plane_baud),
-        daemon=True
+    while True:
+        try:
+            print(f"[MAVLink] Łączę się z autopilotem: {args.plane_device}...")
+            plane = MatekService(device=args.plane_device, baud=args.plane_baud)
+            mission = MissionService(plane)
+            print("[MAVLink] Połączono z autopilotem")
+            break
+        except Exception as e:
+            print(f"[MAVLink] Błąd: {type(e).__name__}: {e}, retry za 3s...")
+            time.sleep(3)
+
+    print(f"[Bridge] Nasłuchuję na porcie {args.listen_port}...")
+    mav = mavutil.mavlink_connection(
+        f"tcpin:0.0.0.0:{args.listen_port}",
+        source_system=255
     )
-    t.start()
+
+    print("[Bridge] TCP podłączony / czekam na wiadomości MAVLink...")
 
     try:
-        tcp_bridge(args.listen_port, args.forward_host, args.forward_port)
+        while True:
+            
+            msg = mav.recv_match(blocking=True, timeout=1)
+            if not msg:
+                continue
+
+            if msg.get_type() == 'HEARTBEAT':
+                print(f"[HEARTBEAT]")
+                continue
+
+            if msg.get_type() != 'STATUSTEXT':
+                continue
+
+            text = msg.text.strip()
+            print(f"[STATUSTEXT] {text}")
+            if text == "LANDING_START":
+                landing_sites = []
+                collecting = True
+                print("[LANDING] Start zbierania lądowisk")
+
+            elif text.startswith("LANDING:") and collecting:
+                try:
+                    _, coords = text.split(":", 1)
+                    lat, lon = map(float, coords.split(",", 1))
+                    landing_sites.append((lat, lon))
+                    print(f"[LANDING] Dodano: {lat}, {lon}")
+                except Exception as e:
+                    print(f"[LANDING] Błąd parsowania: {text} -> {type(e).__name__}: {e}")
+
+            elif text == "LANDING_END" and collecting:
+                collecting = False
+                print("[LANDING] Koniec zbierania lądowisk")
+                handle_landing(mission)
+
     except KeyboardInterrupt:
         pass
     finally:
-        stop_event.set()
+        try:
+            mav.close()
+        except Exception:
+            pass
         print("\n[Bridge] Zatrzymano.")
         sys.exit(0)
+
+if __name__ == "__main__":
+    main()
