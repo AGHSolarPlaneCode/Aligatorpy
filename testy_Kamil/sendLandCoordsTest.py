@@ -1,6 +1,16 @@
-from Application.Services.MatekService import MatekService
+ # Initialize connection\n
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-drone = MatekService(device="tcp:192.168.x.x:5760")
+# Initialize connection
+from Application.Services.MatekService import MatekService
+from Application.Services.MissionService import MissionService
+
+
+
+
+drone = MatekService(device="tcp:172.20.10.2:5761")
 
 drone.send_landing_sites([
     (50.1, 19.1),
