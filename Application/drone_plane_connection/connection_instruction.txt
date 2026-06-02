@@ -1,0 +1,35 @@
+Komunikacja dron/ samolot
+
+Łączenia:
+Laptop dronowy:
+TCP/ outbound / ip laptopa samolotowego / bez write / kliknij go
+Laptop samolotowy:
+TCP/ inbound / ip : localhost / write zaznaczone / kliknij go
+
+Na laptopie samolotowym :
+Przykład :
+python bridge_plane.py --listen-port 5770 --plane-device tcp:localhost:5761
+
+listen-port : 
+nasłuchuje na pakiety mavlinkowe z Mission Plannera dronowego (porty muszą się zgadzać z tym w MP)
+
+plane-device : 
+połączenie lokalne laptopa samolotowego z jego Mission Plannerem do edytowania misji
+
+
+Za pomocą tego połączenia jesteśmy w stanie modyfikować misję 
+bezpośrednio ze skryptu na laptopie samolotowym po otrzymaniu wykrytych 
+punktów przez drona.
+
+Po otrzymaniu punktów skrypt samolotowy odpala 
+funkcję process_landing_sites() z MissionService. 
+W proces_landing_sites() musi znaleźć się cała logika misji 
+(na ten moment, można w inny sposób). Ale pipeline działa.
+
+Problemy:
+Dron nigdy nie otrzyma ACK, ponieważ połączenie jest jednostronne. 
+Ustawiłem połączenie na jednostronne, z tego względu że Mission Planner 
+przy więcej niż 2 aktywnych połączeniach zaczyna robić 
+bardzo kreatywne rzeczy i się zbyt często wywala. 
+Żeby nie komplikować pipeline zdecydowałem się na najprostsze rozwiązanie. 
+Z tego względu nie będziemy mieli pewności że samolot te pakiety przechwycił.
