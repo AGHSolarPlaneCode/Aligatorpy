@@ -66,19 +66,19 @@ def main():
                 continue
 
             if msg.get_type() == 'HEARTBEAT':
-                print(f"[HEARTBEAT]")
+                print(f"[HEARTBEAT] mode: {msg.custom_mode}")
                 continue
 
             if msg.get_type() != 'STATUSTEXT':
                 continue
 
             text = msg.text.strip()
-            print(f"[STATUSTEXT] {text}")
+            print(f"[STATUSTEXT] '{text}' (len={len(text)})")
+
             if text == "LANDING_START":
                 landing_sites = []
                 collecting = True
                 print("[LANDING] Start zbierania lądowisk")
-
             elif text.startswith("LANDING:") and collecting:
                 try:
                     _, coords = text.split(":", 1)
@@ -87,7 +87,6 @@ def main():
                     print(f"[LANDING] Dodano: {lat}, {lon}")
                 except Exception as e:
                     print(f"[LANDING] Błąd parsowania: {text} -> {type(e).__name__}: {e}")
-
             elif text == "LANDING_END" and collecting:
                 collecting = False
                 print("[LANDING] Koniec zbierania lądowisk")
