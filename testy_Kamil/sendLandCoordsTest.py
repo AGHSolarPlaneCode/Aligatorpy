@@ -10,7 +10,7 @@ from Application.Services.MissionService import MissionService
 
 
 
-drone = MatekService(device="tcp:172.20.10.2:5761")
+drone = MatekService(device="/dev/ttyAMA0")
 
 drone.send_landing_sites([
     (50.1, 19.1),
