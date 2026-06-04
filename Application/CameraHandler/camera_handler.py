@@ -1,8 +1,9 @@
 import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
-import signal
 import threading
+import signal
+from typing import Tuple
 
 # ── Configuration ────────────────────────────────────────────────────────────
 WIDTH, HEIGHT   = 1280, 800
@@ -19,9 +20,18 @@ class CameraPipeline:
     def __init__(self):
         Gst.init(None)
         self.loop = GLib.MainLoop()
+
+        # Thread‑safe storage for the latest frame & timestamp of each branch
+        self._lock_10fps = threading.Lock()
+        self._frame_10fps = None   # raw GRAY8 bytes
+        self._ts_10fps = None      # monotonic capture time (seconds)
+
+        self._lock_120fps = threading.Lock()
+        self._frame_120fps = None
+        self._ts_120fps = None
+
         self.pipeline = self._build_pipeline()
         self._connect_bus()
-        # Valve references for runtime control
         self.valve_10fps  = self.pipeline.get_by_name("valve_10fps")
         self.valve_120fps = self.pipeline.get_by_name("valve_120fps")
 
@@ -78,7 +88,7 @@ class CameraPipeline:
 
         return pipeline
 
-    # ── Appsink callbacks ────────────────────────────────────────────────────
+    # ── Appsink callbacks (store frame + timestamp, no printing) ─────────────
     def _on_frame_10fps(self, sink) -> Gst.FlowReturn:
         sample = sink.emit("pull-sample")
         if sample is None:
@@ -86,16 +96,17 @@ class CameraPipeline:
 
         buf = sample.get_buffer()
         pts_ns = buf.pts
-        if pts_ns != Gst.CLOCK_TIME_NONE:
-            pts_sec = pts_ns / 1e9
-            caps = sample.get_caps()
-            struct = caps.get_structure(0)
-            w = struct.get_int("width").value
-            h = struct.get_int("height").value
-            print(f"[10fps] {w}x{h}  pts={pts_sec:.6f}s (monotonic)")
-        else:
-            print("[10fps] No PTS on buffer")
+        if pts_ns == Gst.CLOCK_TIME_NONE:
+            return Gst.FlowReturn.OK
 
+        ok, mapinfo = buf.map(Gst.MapFlags.READ)
+        if ok:
+            data = bytes(mapinfo.data)          # copy raw GRAY8 bytes
+            pts_sec = pts_ns / 1e9
+            with self._lock_10fps:
+                self._frame_10fps = data
+                self._ts_10fps = pts_sec
+            buf.unmap(mapinfo)
         return Gst.FlowReturn.OK
 
     def _on_frame_120fps(self, sink) -> Gst.FlowReturn:
@@ -105,17 +116,68 @@ class CameraPipeline:
 
         buf = sample.get_buffer()
         pts_ns = buf.pts
-        if pts_ns != Gst.CLOCK_TIME_NONE:
-            pts_sec = pts_ns / 1e9
-            caps = sample.get_caps()
-            struct = caps.get_structure(0)
-            w = struct.get_int("width").value
-            h = struct.get_int("height").value
-            print(f"[120fps] {w}x{h}  pts={pts_sec:.6f}s (monotonic)")
-        else:
-            print("[120fps] No PTS on buffer")
+        if pts_ns == Gst.CLOCK_TIME_NONE:
+            return Gst.FlowReturn.OK
 
+        ok, mapinfo = buf.map(Gst.MapFlags.READ)
+        if ok:
+            data = bytes(mapinfo.data)
+            pts_sec = pts_ns / 1e9
+            with self._lock_120fps:
+                self._frame_120fps = data
+                self._ts_120fps = pts_sec
+            buf.unmap(mapinfo)
         return Gst.FlowReturn.OK
+
+    # ── Public: retrieve latest image from the active branch ─────────────────
+    def get_image(self) -> Tuple[bytes | None, float | None, str | None]:
+        """
+        Returns the latest frame from the currently active local branch.
+
+        Returns:
+            (frame, timestamp, error)
+            - frame (bytes or None): raw GRAY8 image data (1280*800 bytes)
+            - timestamp (float or None): monotonic capture time in seconds
+            - error (str or None): error description if frame unavailable
+        """
+        # Determine which branch is active (drop == False)
+        if not self.valve_10fps.get_property("drop"):
+            # 10 fps branch is active
+            with self._lock_10fps:
+                if self._frame_10fps is None:
+                    return None, None, "No frame received yet (10fps)"
+                return self._frame_10fps, self._ts_10fps, None
+
+        elif not self.valve_120fps.get_property("drop"):
+            # 120 fps branch is active
+            with self._lock_120fps:
+                if self._frame_120fps is None:
+                    return None, None, "No frame received yet (120fps)"
+                return self._frame_120fps, self._ts_120fps, None
+
+        else:
+            return None, None, "No active local branch"
+
+    # ── Valve control with mutual exclusivity ────────────────────────────────
+    def set_10fps_active(self, active: bool):
+        if active:
+            # Ensure only 10fps is open
+            self.valve_120fps.set_property("drop", True)
+            self.valve_10fps.set_property("drop", False)
+            print("[valve] 10fps branch → ACTIVE   (120fps closed)")
+        else:
+            self.valve_10fps.set_property("drop", True)
+            print("[valve] 10fps branch → DROPPED")
+
+    def set_120fps_active(self, active: bool):
+        if active:
+            # Ensure only 120fps is open
+            self.valve_10fps.set_property("drop", True)
+            self.valve_120fps.set_property("drop", False)
+            print("[valve] 120fps branch → ACTIVE   (10fps closed)")
+        else:
+            self.valve_120fps.set_property("drop", True)
+            print("[valve] 120fps branch → DROPPED")
 
     # ── Bus handlers ─────────────────────────────────────────────────────────
     def _connect_bus(self):
@@ -140,17 +202,6 @@ class CameraPipeline:
         warn, _ = msg.parse_warning()
         print(f"[WARN] {warn.message}")
 
-    # ── Public controls ──────────────────────────────────────────────────────
-    def set_10fps_active(self, active: bool):
-        self.valve_10fps.set_property("drop", not active)
-        state = "ACTIVE" if active else "DROPPED"
-        print(f"[valve] 10fps branch → {state}")
-
-    def set_120fps_active(self, active: bool):
-        self.valve_120fps.set_property("drop", not active)
-        state = "ACTIVE" if active else "DROPPED"
-        print(f"[valve] 120fps branch → {state}")
-
     # ── Lifecycle ────────────────────────────────────────────────────────────
     def start(self):
         self.pipeline.set_state(Gst.State.PLAYING)
@@ -172,16 +223,25 @@ class CameraPipeline:
 if __name__ == "__main__":
     cam = CameraPipeline()
 
-    # Toggle branches after a few seconds to verify both timestamps
     def demo_toggle():
         import time
-        time.sleep(5)
-        cam.set_120fps_active(True)    # enable high‑rate branch
-        time.sleep(5)
-        cam.set_10fps_active(False)    # disable low‑rate branch
-        time.sleep(5)
-        cam.set_120fps_active(False)   # disable all local processing
-        time.sleep(2)
+        # Wait for a few frames to arrive
+        time.sleep(3)
+        frame, ts, err = cam.get_image()
+        print(f"[demo] 10fps frame: size={len(frame) if frame else 0}, ts={ts}, err={err}")
+
+        # Switch to high‑rate branch
+        cam.set_120fps_active(True)
+        time.sleep(3)
+        frame, ts, err = cam.get_image()
+        print(f"[demo] 120fps frame: size={len(frame) if frame else 0}, ts={ts}, err={err}")
+
+        # Stop all local processing
+        cam.set_120fps_active(False)
+        time.sleep(1)
+        frame, ts, err = cam.get_image()
+        print(f"[demo] no branch: err={err}")
+
         cam.stop()
 
     threading.Thread(target=demo_toggle, daemon=True).start()
