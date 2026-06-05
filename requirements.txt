@@ -1,0 +1,6 @@
+numpy
+opencv-python
+pymavlink
+# GStreamer (gi) instalowane systemowo, nie przez pip:
+#   sudo apt install python3-gi gstreamer1.0-tools gstreamer1.0-plugins-{base,good,bad}
+#   oraz libcamera + wtyczka libcamerasrc dla OV9281
