@@ -8,16 +8,11 @@ import numpy as np
 from typing import Tuple
 
 # ── Configuration ────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 1280, 800
-FPS_SOURCE = 120
-FORMAT = "GRAY8"  # OV9281 is monochrome
-FPS_STREAM = 60  # streaming branch framerate (after crop)
-FPS_LOW = 10  # low‑rate processing branch
-SHM_SOCKET_PATH = "/tmp/cam_stream"
-SHM_SIZE = 12000000
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+WIDTH, HEIGHT = 640, 400
+FPS_SOURCE = 200
+FORMAT = "GRAY16_LE"
+FPS_STREAM = 30
+FPS_LOW = 10
 
 
 class CameraPipeline:
@@ -25,147 +20,170 @@ class CameraPipeline:
         Gst.init(None)
         self.loop = GLib.MainLoop()
 
-        # Thread‑safe storage for the latest frame & timestamp of each branch
+        # ── Frame storage ──────────────────────────────────────────────────────
         self._lock_10fps = threading.Lock()
-        self._frame_10fps: np.ndarray | None = None
-        self._ts_10fps: float | None = None
+        self._frame_10fps = None
+        self._ts_10fps = None
 
         self._lock_120fps = threading.Lock()
-        self._frame_120fps: np.ndarray | None = None
-        self._ts_120fps: float | None = None
+        self._frame_120fps = None
+        self._ts_120fps = None
 
         self._lock_valve = threading.Lock()
-        self._base_time_ns: int = 0
+        self._base_time_ns = 0
 
         self.pipeline = self._build_pipeline()
         self._connect_bus()
+
         self.valve_10fps = self.pipeline.get_by_name("valve_10fps")
         self.valve_120fps = self.pipeline.get_by_name("valve_120fps")
 
-    # ── Pipeline construction ─────────────────────────────────────────────────
-    def _build_pipeline(self) -> Gst.Pipeline:
+    # ── Pipeline ──────────────────────────────────────────────────────────────
+    def _build_pipeline(self):
         pipeline_str = f"""
             libcamerasrc
-                ! video/x-raw, format={FORMAT}, width={WIDTH}, height={HEIGHT},
-                  framerate={FPS_SOURCE}/1
+                ! video/x-raw,
+                    format={FORMAT},
+                    width={WIDTH},
+                    height={HEIGHT},
+                    framerate={FPS_SOURCE}/1
                 ! tee name=source_tee
 
             source_tee.
-                ! queue name=stream_q
-                    max-size-buffers=2 max-size-bytes=0 max-size-time=0
-                    leaky=downstream
-                ! videocrop top=40 bottom=40
-                ! videorate
-                ! video/x-raw, framerate={FPS_STREAM}/1
-                ! shmsink socket-path={SHM_SOCKET_PATH}
-                    shm-size={SHM_SIZE}
-                    sync=false
-                    wait-for-connection=false
+                ! queue leaky=downstream max-size-buffers=1
+                ! fakesink sync=false
 
             source_tee.
-                ! queue name=local_q
-                    max-size-buffers=2 max-size-bytes=0 max-size-time=0
-                    leaky=downstream
+                ! queue name=local_q leaky=downstream max-size-buffers=1
                 ! tee name=local_tee
 
             local_tee.
-                ! queue name=low_q
-                    max-size-buffers=2 max-size-bytes=0 max-size-time=0
-                    leaky=downstream
+                ! queue name=low_q leaky=downstream max-size-buffers=1
                 ! valve name=valve_10fps drop=false
                 ! videorate drop-only=true
-                ! video/x-raw, format={FORMAT}, width={WIDTH}, height={HEIGHT},
-                  framerate={FPS_LOW}/1
+                ! video/x-raw,
+                    format={FORMAT},
+                    width={WIDTH},
+                    height={HEIGHT},
+                    framerate={FPS_LOW}/1
                 ! appsink name=sink_10fps
-                    emit-signals=true max-buffers=1 drop=true sync=false
+                    emit-signals=true
+                    max-buffers=1
+                    drop=true
+                    sync=false
+                    async=false
+                    enable-last-sample=false
 
             local_tee.
-                ! queue name=high_q
-                    max-size-buffers=2 max-size-bytes=0 max-size-time=0
-                    leaky=downstream
+                ! queue name=high_q leaky=downstream max-size-buffers=1
                 ! valve name=valve_120fps drop=true
-                ! video/x-raw, format={FORMAT}, width={WIDTH}, height={HEIGHT},
-                  framerate={FPS_SOURCE}/1
+                ! video/x-raw,
+                    format={FORMAT},
+                    width={WIDTH},
+                    height={HEIGHT},
+                    framerate={FPS_SOURCE}/1
                 ! appsink name=sink_120fps
-                    emit-signals=true max-buffers=1 drop=true sync=false
+                    emit-signals=true
+                    max-buffers=1
+                    drop=true
+                    sync=false
+                    async=false
+                    enable-last-sample=false
         """
+
         pipeline = Gst.parse_launch(pipeline_str)
 
-        sink_10 = pipeline.get_by_name("sink_10fps")
-        sink_10.connect("new-sample", self._on_frame_10fps)
-        sink_120 = pipeline.get_by_name("sink_120fps")
-        sink_120.connect("new-sample", self._on_frame_120fps)
+        pipeline.get_by_name("sink_10fps").connect(
+            "new-sample", self._on_frame_10fps
+        )
+        pipeline.get_by_name("sink_120fps").connect(
+            "new-sample", self._on_frame_120fps
+        )
 
         return pipeline
 
-    # ── Appsink callbacks ─────────────────────────────────────────────────────
-    def _pull_frame(self, sink) -> Tuple[np.ndarray | None, float | None]:
-        """
-        Pull one sample from an appsink and return (numpy_array, capture_ts_sec).
-        Returns (None, None) on EOS / flush.
-        """
+    # ── Timing ───────────────────────────────────────────────────────────────
+    def _get_running_time_ns(self):
+        clock = self.pipeline.get_clock()
+        if clock is None:
+            return 0
+        return clock.get_time() - self._base_time_ns
+
+    # ── ZERO-COPY FRAME EXTRACTION ────────────────────────────────────────────
+    def _pull_frame(self, sink):
         sample = sink.emit("pull-sample")
         if sample is None:
             return None, None
 
         buf = sample.get_buffer()
-        if buf.pts == Gst.CLOCK_TIME_NONE:
-            return None, None
 
-        # Read safely without per-frame setup or race conditions
-        ts_sec = (self._base_time_ns + buf.pts) / 1e9
+        # timestamp
+        if buf.pts != Gst.CLOCK_TIME_NONE:
+            ts = (self._base_time_ns + buf.pts) / 1e9
+        else:
+            ts = self._get_running_time_ns() / 1e9
+
+        caps = sample.get_caps()
+        struct = caps.get_structure(0)
+
+        width = struct.get_int("width")[1]
+        height = struct.get_int("height")[1]
 
         ok, mapinfo = buf.map(Gst.MapFlags.READ)
         if not ok:
             return None, None
+
         try:
-            # Copy buffer data into a NumPy array before memory unmapping
-            data = np.frombuffer(mapinfo.data, dtype=np.uint8).copy()
+            frame = np.ndarray(
+                shape=(height, width),
+                dtype=np.uint16,
+                buffer=mapinfo.data
+            )
+
+            return frame, ts
+
         finally:
             buf.unmap(mapinfo)
 
-        return data, ts_sec
-
-    def _on_frame_10fps(self, sink) -> Gst.FlowReturn:
-        data, ts = self._pull_frame(sink)
-        if data is None:
+    def _on_frame_10fps(self, sink):
+        frame, ts = self._pull_frame(sink)
+        if frame is None:
             return Gst.FlowReturn.OK
+
         with self._lock_10fps:
-            self._frame_10fps = data
+            self._frame_10fps = frame
             self._ts_10fps = ts
+
         return Gst.FlowReturn.OK
 
-    def _on_frame_120fps(self, sink) -> Gst.FlowReturn:
-        data, ts = self._pull_frame(sink)
-        if data is None:
+    def _on_frame_120fps(self, sink):
+        frame, ts = self._pull_frame(sink)
+        if frame is None:
             return Gst.FlowReturn.OK
+
         with self._lock_120fps:
-            self._frame_120fps = data
+            self._frame_120fps = frame
             self._ts_120fps = ts
+
         return Gst.FlowReturn.OK
 
-    # ── Public: retrieve latest image from the active branch ──────────────────
-    def get_image(self) -> Tuple[np.ndarray | None, float | None, str | None]:
+    # ── Public API ───────────────────────────────────────────────────────────
+    def get_image(self):
         with self._lock_valve:
-            valve_10_open = not self.valve_10fps.get_property("drop")
-            valve_120_open = not self.valve_120fps.get_property("drop")
+            v10 = not self.valve_10fps.get_property("drop")
+            v120 = not self.valve_120fps.get_property("drop")
 
-        if valve_10_open:
+        if v10:
             with self._lock_10fps:
-                if self._frame_10fps is None:
-                    return None, None, "No frame received yet (10 fps)"
                 return self._frame_10fps, self._ts_10fps, None
 
-        elif valve_120_open:
+        if v120:
             with self._lock_120fps:
-                if self._frame_120fps is None:
-                    return None, None, "No frame received yet (120 fps)"
                 return self._frame_120fps, self._ts_120fps, None
 
-        else:
-            return None, None, "No active local branch"
+        return None, None, "No active branch"
 
-    # ── Valve control ─────────────────────────────────────────────────────────
+    # ── Control ───────────────────────────────────────────────────────────────
     def set_10fps_active(self, active: bool):
         with self._lock_valve:
             if active:
@@ -182,7 +200,7 @@ class CameraPipeline:
             else:
                 self.valve_120fps.set_property("drop", True)
 
-    # ── Bus handlers ──────────────────────────────────────────────────────────
+    # ── Bus ───────────────────────────────────────────────────────────────────
     def _connect_bus(self):
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
@@ -192,62 +210,55 @@ class CameraPipeline:
         bus.connect("message::state-changed", self._on_state_changed)
 
     def _on_state_changed(self, bus, msg):
-        # Only check messages coming from the top-level pipeline
         if msg.src == self.pipeline:
-            old, new, pending = msg.parse_state_changed()
+            old, new, _ = msg.parse_state_changed()
             if new == Gst.State.PLAYING:
-                # Capture the base_time safely right as the pipeline transitions on the main thread
                 self._base_time_ns = self.pipeline.get_base_time()
 
     def _on_error(self, bus, msg):
         err, dbg = msg.parse_error()
-        print(f"[ERROR] {err.message}")
+        print("[ERROR]", err.message)
         if dbg:
-            print(f"[DEBUG] {dbg}")
+            print("[DEBUG]", dbg)
         self.stop()
 
     def _on_eos(self, bus, msg):
-        print("[EOS] stream ended")
+        print("[EOS]")
         self.stop()
 
     def _on_warning(self, bus, msg):
-        warn, dbg = msg.parse_warning()
-        print(f"[WARN] {warn.message}")
+        warn, _ = msg.parse_warning()
+        print("[WARN]", warn.message)
 
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
+    # ── Lifecycle ────────────────────────────────────────────────────────────
     def start(self):
         self.pipeline.set_state(Gst.State.PLAYING)
         signal.signal(signal.SIGINT, lambda *_: self.stop())
         self.loop.run()
 
     def stop(self):
-        print("[pipeline] stopping …")
+        print("[pipeline] stopping")
         self.pipeline.set_state(Gst.State.NULL)
         self.loop.quit()
 
 
-# ── Demo / test ───────────────────────────────────────────────────────────────
+# ── Demo ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    import time
+
     cam = CameraPipeline()
 
+    def demo():
+        while True:
+            cam.set_10fps_active(True)
+            time.sleep(2)
+            f, t, _ = cam.get_image()
+            print("10fps:", None if f is None else f.shape, t)
 
-    def demo_toggle():
-        import time
-        time.sleep(3)
-        frame, ts, err = cam.get_image()
-        size = frame.size if frame is not None else 0
-        ts_val = ts if ts is not None else 0.0
-        print(f"[demo] 10fps  frame: size={size}, ts={ts_val:.6f}s, err={err}")
+            cam.set_120fps_active(True)
+            time.sleep(2)
+            f, t, _ = cam.get_image()
+            print("60fps:", None if f is None else f.shape, t)
 
-        cam.set_120fps_active(True)
-        time.sleep(3)
-        frame, ts, err = cam.get_image()
-        size = frame.size if frame is not None else 0
-        ts_val = ts if ts is not None else 0.0
-        print(f"[demo] 120fps frame: size={size}, ts={ts_val:.6f}s, err={err}")
-
-        cam.stop()
-
-
-    threading.Thread(target=demo_toggle, daemon=True).start()
+    threading.Thread(target=demo, daemon=True).start()
     cam.start()
