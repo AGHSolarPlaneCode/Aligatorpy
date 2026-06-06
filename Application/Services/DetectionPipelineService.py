@@ -18,7 +18,7 @@ class DetectionPipelineService:
     Używa:
     - GiCameraService (GStreamer, 10 fps branch)
     - LedDetector
-    - MissionService.process_target()
+    - MissionService.process_target() — GPS/attitude pobierane w process_target()
     """
 
     DEFAULT_FPS = 10
@@ -88,7 +88,6 @@ class DetectionPipelineService:
 
         self.camera.start()
         self.camera.set_10fps_mode()
-        self.drone.set_telemetry_rate(self.fps)
         self.led_detector.reset()
 
         interval = 1.0 / self.fps

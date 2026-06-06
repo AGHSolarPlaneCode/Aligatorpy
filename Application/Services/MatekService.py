@@ -874,11 +874,6 @@ class MatekService:
         )
         self.logger.info(f"Zażądano message_id={message_id} z częstotliwością {hz}Hz ({interval_us}us)")
 
-    def set_telemetry_rate(self, hz: float = 10) -> None:
-        """Ustawia częstotliwość GPS (GLOBAL_POSITION_INT) i ATTITUDE."""
-        self.set_message_rate(33, hz)  # GLOBAL_POSITION_INT
-        self.set_message_rate(30, hz)  # ATTITUDE
-
     def close(self) -> None:
         """
         Closes the MAVLink connection.
