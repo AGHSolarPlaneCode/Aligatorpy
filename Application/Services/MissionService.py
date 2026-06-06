@@ -162,6 +162,33 @@ class MissionService:
         return top_two
 
 
+    def process_landing_sites(self, sites: list[tuple[float, float]]) -> bool:
+        """
+        Przyjmuje listę lądowisk od drona i wysyła waypoints zrzutu do autopilota.
+        Args:
+            sites: lista tupli (lat, lon)
+        """
+        if not sites:
+            self.logger.warning("process_landing_sites: empty sites list")
+            return False
+
+        attitude = self.drone.get_attitude()
+        if attitude is None:
+            self.logger.error("process_landing_sites: no attitude data")
+            return False
+
+        container = []
+        yaw = attitude[2]
+
+        for lat, lon in sites:
+            drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": False})
+            self.calc_drop_waypoints(drop_point, yaw, container)
+
+        ok = self.drone.append_waypoints(container)
+        self.logger.info(f"process_landing_sites: sent {len(container)} waypoints, ok={ok}")
+        return ok
+
+
     def calc_drop_coords(self, trg_dict: dict) -> Tuple[float, float]:
         ''' 
         Oblicza współrzędne GPS punktu zrzutu na podstawie pozycji celu i kierunku nalotu.

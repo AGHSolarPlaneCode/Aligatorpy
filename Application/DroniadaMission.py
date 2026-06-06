@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+import json
+import threading
+import time
+from queue import Queue
+from typing import Any, Dict, List, Optional, Tuple
+
+from Application.Logger.log_module import get_logger
+from Application.Services.DetectionPipelineService import run_led_detection_pipeline
+from Application.Services.GiCameraService import GiCameraService
+from Application.Services.MatekService import MatekService
+from Application.Services.MissionPlannerService import MissionPlannerService
+from Application.Services.MissionService import MissionService
+from Application.Services.OokDetectionService import OokDetectionService
+from Application.configuration.config_loader import cfg
+
+
+class DroniadaMissionOrchestrator:
+    def __init__(self, dry_run: bool = False):
+        self.logger = get_logger(__name__)
+        self.dry_run = dry_run
+        self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        self.mission = MissionService(self.drone)
+        self.planner = MissionPlannerService()
+        self.camera = GiCameraService()
+        self.mission_cfg = cfg.mission
+
+    def _save_results(self, data: dict) -> None:
+        path = cfg.dirs.targets_file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        self.logger.info(f"Results saved to {path}")
+
+    def _run_detection_phase(self) -> List[Dict[str, Any]]:
+        stop_event = threading.Event()
+        results_queue: Queue = Queue()
+        pipeline_thread = threading.Thread(
+            target=run_led_detection_pipeline,
+            kwargs={
+                "stop_event": stop_event,
+                "is_bottle": self.mission_cfg.is_bottle,
+                "fps": 10,
+                "device": cfg.mav.device2,
+                "baud": cfg.mav.baud,
+                "result_queue": results_queue,
+                "camera": self.camera,
+            },
+            daemon=True,
+        )
+        pipeline_thread.start()
+        self.logger.info(
+            f"Detection phase: waiting for wp {self.mission_cfg.start_wp} -> {self.mission_cfg.stop_wp}"
+        )
+
+        targets: List[Dict[str, Any]] = []
+        while True:
+            curr_wp = self.drone.get_mission_status()
+            if curr_wp >= self.mission_cfg.stop_wp:
+                self.logger.info(f"Reached wp {curr_wp}, stopping detection")
+                stop_event.set()
+                break
+            time.sleep(0.2)
+
+        pipeline_thread.join(timeout=20)
+        if not results_queue.empty():
+            targets = results_queue.get()
+
+        self.logger.info(f"Detection phase complete: {len(targets)} targets")
+        return targets
+
+    def _run_loiter_and_ook_phase(
+        self,
+        ordered_targets: List[Dict[str, Any]],
+        loiter_start_wp: int,
+    ) -> Tuple[List[Dict[str, Any]], List[Tuple[float, float]]]:
+        ook_service = OokDetectionService(self.camera)
+        ook_results: List[Dict[str, Any]] = []
+        landing_sites: List[Tuple[float, float]] = []
+
+        loiter_count = len(ordered_targets)
+        loiter_end_wp = loiter_start_wp + loiter_count
+        current_loiter_idx = 0
+
+        self.logger.info(
+            f"LOITER/OOK phase: monitoring wp {loiter_start_wp}..{loiter_end_wp - 1}"
+        )
+
+        while current_loiter_idx < loiter_count:
+            curr_wp = self.drone.get_mission_status()
+
+            expected_wp = loiter_start_wp + current_loiter_idx
+            if curr_wp == expected_wp:
+                target = ordered_targets[current_loiter_idx]
+                self.logger.info(
+                    f"At LOITER wp {curr_wp} over target "
+                    f"({target['lat']:.6f}, {target['lon']:.6f}) — starting OOK"
+                )
+
+                ook_result = ook_service.detect_modulation()
+                ook_results.append(ook_result)
+
+                if (
+                    ook_result.get("freq") is not None
+                    and ook_result.get("confidence", 0) >= self.mission_cfg.ook.min_confidence
+                ):
+                    landing_sites.append((target["lat"], target["lon"]))
+                    self.logger.info(
+                        f"OOK confirmed at ({target['lat']:.6f}, {target['lon']:.6f}): "
+                        f"{ook_result['freq']}Hz"
+                    )
+                else:
+                    self.logger.warning(
+                        f"OOK not confirmed at ({target['lat']:.6f}, {target['lon']:.6f})"
+                    )
+
+                current_loiter_idx += 1
+
+            if curr_wp >= loiter_end_wp:
+                break
+
+            time.sleep(0.2)
+
+        return ook_results, landing_sites
+
+    def run(self) -> dict:
+        self.drone.set_mission_current_rate(10)
+        self.camera.start()
+
+        try:
+            # Phase 1: wait for detection start waypoint
+            self.logger.info(f"Waiting for detection start wp {self.mission_cfg.start_wp}")
+            while True:
+                curr_wp = self.drone.get_mission_status()
+                if curr_wp == self.mission_cfg.start_wp:
+                    break
+                time.sleep(0.2)
+
+            # Phase 2: LED detection
+            targets = self._run_detection_phase()
+            if not targets:
+                self.logger.warning("No targets detected — aborting mission extension")
+                return {"targets": [], "landing_sites": []}
+
+            # Phase 3: plan route and append LOITER waypoints
+            coords = self.drone.get_current_coordinates()
+            if coords is None:
+                self.logger.error("No GPS for route planning")
+                return {"targets": targets, "landing_sites": []}
+
+            start_lat, start_lon, _ = coords
+            ordered = self.planner.order_targets_nearest(start_lat, start_lon, targets)
+            loiter_wps = self.planner.build_loiter_waypoints(
+                ordered, self.mission_cfg.loiter
+            )
+
+            curr_wp_before = self.drone.get_mission_status()
+            loiter_start_wp = curr_wp_before + 1
+
+            if not self.dry_run:
+                ok = self.drone.append_waypoints(loiter_wps)
+                if not ok:
+                    self.logger.error("Failed to append LOITER waypoints")
+                    return {"targets": ordered, "landing_sites": []}
+            else:
+                self.logger.info(f"[dry-run] Would append {len(loiter_wps)} LOITER waypoints")
+
+            # Phase 4: OOK at each LOITER
+            ook_results, landing_sites = self._run_loiter_and_ook_phase(
+                ordered, loiter_start_wp
+            )
+
+            # Phase 5: send landing sites to plane
+            if landing_sites and not self.dry_run:
+                self.drone.send_landing_sites(landing_sites)
+            elif landing_sites:
+                self.logger.info(f"[dry-run] Would send {len(landing_sites)} landing sites")
+
+            result = {
+                "targets": ordered,
+                "ook_results": ook_results,
+                "landing_sites": [{"lat": lat, "lon": lon} for lat, lon in landing_sites],
+            }
+            self._save_results(result)
+            return result
+
+        finally:
+            self.camera.stop()
+            self.drone.close()
+
+
+def main(dry_run: bool = False):
+    orchestrator = DroniadaMissionOrchestrator(dry_run=dry_run)
+    return orchestrator.run()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Droniada competition mission orchestrator")
+    parser.add_argument("--dry-run", action="store_true", help="Skip append_waypoints and send_landing_sites")
+    args = parser.parse_args()
+    main(dry_run=args.dry_run)

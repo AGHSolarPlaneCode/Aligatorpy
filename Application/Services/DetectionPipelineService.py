@@ -4,9 +4,10 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from Application.Logger.log_module import get_logger
-from Application.Services.CameraService import CameraService
+from Application.Services.GiCameraService import GiCameraService
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
+from Application.Services.led_detector import LedDetector
 from Application.configuration.config_loader import cfg
 
 
@@ -14,10 +15,10 @@ class DetectionPipelineService:
     """
     Pipeline detekcji diod LED z telemetrią drona @ 10 Hz.
 
-    Używa istniejących metod:
-    - CameraService.process_led_frame()
-    - MissionService.process_target()  (zrzutowanie + agregacja celów)
-    - MatekService.set_telemetry_rate()  (nowa metoda, GPS + ATTITUDE)
+    Używa:
+    - GiCameraService (GStreamer, 10 fps branch)
+    - LedDetector
+    - MissionService.process_target()
     """
 
     DEFAULT_FPS = 10
@@ -25,14 +26,15 @@ class DetectionPipelineService:
     def __init__(
         self,
         drone: MatekService,
-        camera: Optional[CameraService] = None,
+        camera: Optional[GiCameraService] = None,
         mission: Optional[MissionService] = None,
         fps: int = DEFAULT_FPS,
     ):
         self.logger = get_logger(__name__)
         self.drone = drone
-        self.camera = camera or CameraService(drone=drone)
+        self.camera = camera or GiCameraService()
         self.mission = mission or MissionService(drone)
+        self.led_detector = LedDetector(self.camera.WIDTH, self.camera.HEIGHT)
         self.fps = fps
 
     @staticmethod
@@ -41,17 +43,12 @@ class DetectionPipelineService:
         return MissionService.load_Poly(zone_path)
 
     def _scale_pixel(self, x: int, y: int) -> Tuple[int, int]:
-        """Skaluje piksel z rozdzielczości detekcji do rozdzielczości kalibracji kamery."""
-        sx = self.mission.image_width / self.camera.RESOLUTION_W
-        sy = self.mission.image_height / self.camera.RESOLUTION_H
+        sx = self.mission.image_width / self.camera.WIDTH
+        sy = self.mission.image_height / self.camera.HEIGHT
         return int(x * sx), int(y * sy)
 
     def _process_frame(self, frame, is_bottle: bool) -> int:
-        """
-        Wykrywa diody w klatce i rejestruje je przez MissionService.process_target().
-        Zwraca liczbę pomyślnie przetworzonych detekcji w tej klatce.
-        """
-        _, targets = self.camera.process_led_frame(frame)
+        targets = self.led_detector.process_frame(frame)
         accepted = 0
 
         for target in targets:
@@ -78,23 +75,10 @@ class DetectionPipelineService:
         is_bottle: bool = True,
         geofence: Optional[List[Tuple[float, float]]] = None,
         max_frames: Optional[int] = None,
-        configure_camera: bool = True,
     ) -> List[Dict[str, Any]]:
-        """
-        Główna pętla pipeline detekcji.
-
-        Args:
-            stop_event: threading.Event / multiprocessing.Event — zatrzymuje pętlę
-            is_bottle: typ celu przekazywany do process_target()
-            geofence: lista (lat, lon) — domyślnie z cfg.zones
-            max_frames: opcjonalny limit klatek (testy)
-            configure_camera: przełącza kamerę w tryb wideo 10 fps
-
-        Returns:
-            Lista wykrytych celów: [{"lat", "lon", "count", "isBottle"}, ...]
-        """
         if stop_event is None:
-            stop_event = self.camera.stop_event
+            import threading
+            stop_event = threading.Event()
 
         if geofence is None:
             geofence = self.load_search_zone()
@@ -102,12 +86,10 @@ class DetectionPipelineService:
         self.mission.GEOFENCE = geofence
         self.mission.TRG_CANDIDATES = []
 
+        self.camera.start()
+        self.camera.set_10fps_mode()
         self.drone.set_telemetry_rate(self.fps)
-        if configure_camera:
-            detection_size = (self.camera.RESOLUTION_W, self.camera.RESOLUTION_H)
-            self.camera.configure_for_streaming(size=detection_size, fps=self.fps)
-
-        self.camera.reset_led_detector()
+        self.led_detector.reset()
 
         interval = 1.0 / self.fps
         frame_count = 0
@@ -118,15 +100,16 @@ class DetectionPipelineService:
         while not stop_event.is_set():
             loop_start = time.monotonic()
 
-            frame = self.camera.capture_frame()
-            accepted = self._process_frame(frame, is_bottle)
-            frame_count += 1
+            frame, _ = self.camera.get_frame()
+            if frame is not None:
+                accepted = self._process_frame(frame, is_bottle)
+                frame_count += 1
 
-            if accepted:
-                self.logger.info(
-                    f"Frame {frame_count}: accepted {accepted} detection(s), "
-                    f"candidates={len(self.mission.TRG_CANDIDATES)}"
-                )
+                if accepted:
+                    self.logger.info(
+                        f"Frame {frame_count}: accepted {accepted} detection(s), "
+                        f"candidates={len(self.mission.TRG_CANDIDATES)}"
+                    )
 
             if max_frames is not None and frame_count >= max_frames:
                 break
@@ -147,28 +130,14 @@ def run_led_detection_pipeline(
     geofence: Optional[List[Tuple[float, float]]] = None,
     max_frames: Optional[int] = None,
     result_queue=None,
+    camera: Optional[GiCameraService] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Entry point do uruchomienia pipeline w osobnym procesie/wątku.
-
-    Przykład (multiprocessing):
-        from multiprocessing import Process, Event, Queue
-        stop = Event()
-        results = Queue()
-        p = Process(
-            target=run_led_detection_pipeline,
-            args=(stop,),
-            kwargs={"result_queue": results},
-        )
-        p.start()
-        ...
-        stop.set()
-        p.join()
-        targets = results.get()
+    Entry point for running detection in a thread (shares camera with main process).
     """
     pipeline_device = device or cfg.mav.device2
     drone = MatekService(device=pipeline_device, baud=baud or cfg.mav.baud)
-    pipeline = DetectionPipelineService(drone=drone, fps=fps)
+    pipeline = DetectionPipelineService(drone=drone, camera=camera, fps=fps)
     try:
         targets = pipeline.run(
             stop_event=stop_event,

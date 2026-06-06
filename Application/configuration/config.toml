@@ -59,9 +59,27 @@ logs_dir = "media/logs"
 photos_dir = "media/photos"
 videos_dir = "media/videos"
 zones_dir = "configuration/zones"
+targets_file = "media/droniada_targets.json"
 
 [system]
 debug_mode = false
 
 [zones]
 search_zone_path = "Sloszowa_target_detection_1.poly"
+
+[mission]
+start_wp = 5
+stop_wp = 96
+is_bottle = true
+
+[mission.loiter]
+time = 15
+alt = 60
+radius = 50
+
+[mission.ook]
+duration_s = 10
+candidates = [5.0, 7.0, 9.0]
+min_confidence = 4.0
+roi_size = 40
+brightness_threshold = 220
