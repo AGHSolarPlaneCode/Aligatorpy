@@ -13,12 +13,12 @@ from Application.configuration.config_loader import cfg
 
 class DetectionPipelineService:
     """
-    Pipeline detekcji diod LED z telemetrią drona @ 10 Hz.
+    Pipeline detekcji diod LED @ 10 Hz.
 
-    Używa:
-    - GiCameraService (GStreamer, 10 fps branch)
-    - LedDetector
-    - MissionService.process_target() — GPS/attitude pobierane w process_target()
+    Wymaga jednego połączenia MAVLink — wywołuj process_one_frame() wyłącznie
+    z głównego wątku (process_target() czyta GPS/attitude z MatekService).
+
+    Kamera: GiCameraService (gi_camera_handler) — współdzielona z resztą misji.
     """
 
     DEFAULT_FPS = 10
@@ -26,13 +26,13 @@ class DetectionPipelineService:
     def __init__(
         self,
         drone: MatekService,
-        camera: Optional[GiCameraService] = None,
+        camera: GiCameraService,
         mission: Optional[MissionService] = None,
         fps: int = DEFAULT_FPS,
     ):
         self.logger = get_logger(__name__)
         self.drone = drone
-        self.camera = camera or GiCameraService()
+        self.camera = camera
         self.mission = mission or MissionService(drone)
         self.led_detector = LedDetector(self.camera.WIDTH, self.camera.HEIGHT)
         self.fps = fps
@@ -42,12 +42,42 @@ class DetectionPipelineService:
         zone_path = cfg.dirs.zones_dir / cfg.zones.search_zone_path
         return MissionService.load_Poly(zone_path)
 
+    def prepare(
+        self,
+        is_bottle: bool = True,
+        geofence: Optional[List[Tuple[float, float]]] = None,
+        start_camera: bool = False,
+    ) -> None:
+        """Inicjalizacja przed pętlą detekcji (bez blokowania — jedna klatka)."""
+        if geofence is None:
+            geofence = self.load_search_zone()
+
+        self.mission.GEOFENCE = geofence
+        self.mission.TRG_CANDIDATES = []
+
+        if start_camera:
+            self.camera.start()
+
+        self.camera.set_10fps_mode()
+        self.led_detector.reset()
+        self.logger.info(
+            f"Detection pipeline prepared @ {self.fps}Hz (is_bottle={is_bottle})"
+        )
+
     def _scale_pixel(self, x: int, y: int) -> Tuple[int, int]:
         sx = self.mission.image_width / self.camera.WIDTH
         sy = self.mission.image_height / self.camera.HEIGHT
         return int(x * sx), int(y * sy)
 
-    def _process_frame(self, frame, is_bottle: bool) -> int:
+    def process_one_frame(self, is_bottle: bool = True) -> int:
+        """
+        Jedna iteracja: klatka z GiCameraService + detekcja + process_target().
+        Wywoływać tylko z głównego wątku (MAVLink).
+        """
+        frame, _ = self.camera.get_frame()
+        if frame is None:
+            return 0
+
         targets = self.led_detector.process_frame(frame)
         accepted = 0
 
@@ -59,6 +89,10 @@ class DetectionPipelineService:
             result = self.mission.process_target(pixel, is_bottle, self.mission.GEOFENCE)
             if result:
                 accepted += 1
+                self.logger.info(
+                    f"Target registered at pixel {pixel}, "
+                    f"candidates={len(self.mission.TRG_CANDIDATES)}"
+                )
 
         return accepted
 
@@ -71,44 +105,29 @@ class DetectionPipelineService:
 
     def run(
         self,
-        stop_event=None,
+        should_stop,
         is_bottle: bool = True,
         geofence: Optional[List[Tuple[float, float]]] = None,
         max_frames: Optional[int] = None,
+        start_camera: bool = False,
     ) -> List[Dict[str, Any]]:
-        if stop_event is None:
-            import threading
-            stop_event = threading.Event()
+        """
+        Pętla detekcji w głównym wątku.
 
-        if geofence is None:
-            geofence = self.load_search_zone()
-
-        self.mission.GEOFENCE = geofence
-        self.mission.TRG_CANDIDATES = []
-
-        self.camera.start()
-        self.camera.set_10fps_mode()
-        self.led_detector.reset()
+        Args:
+            should_stop: callable() -> bool — np. lambda: curr_wp >= stop_wp
+        """
+        self.prepare(is_bottle=is_bottle, geofence=geofence, start_camera=start_camera)
 
         interval = 1.0 / self.fps
         frame_count = 0
-        self.logger.info(
-            f"Starting LED detection pipeline @ {self.fps}Hz (is_bottle={is_bottle})"
-        )
 
-        while not stop_event.is_set():
+        while not should_stop():
             loop_start = time.monotonic()
 
-            frame, _ = self.camera.get_frame()
-            if frame is not None:
-                accepted = self._process_frame(frame, is_bottle)
+            accepted = self.process_one_frame(is_bottle)
+            if accepted:
                 frame_count += 1
-
-                if accepted:
-                    self.logger.info(
-                        f"Frame {frame_count}: accepted {accepted} detection(s), "
-                        f"candidates={len(self.mission.TRG_CANDIDATES)}"
-                    )
 
             if max_frames is not None and frame_count >= max_frames:
                 break
@@ -118,34 +137,3 @@ class DetectionPipelineService:
         targets = list(self.mission.TRG_CANDIDATES)
         self.logger.info(f"Pipeline finished with {len(targets)} target candidate(s)")
         return targets
-
-
-def run_led_detection_pipeline(
-    stop_event,
-    is_bottle: bool = True,
-    fps: int = DetectionPipelineService.DEFAULT_FPS,
-    device: Optional[str] = None,
-    baud: Optional[int] = None,
-    geofence: Optional[List[Tuple[float, float]]] = None,
-    max_frames: Optional[int] = None,
-    result_queue=None,
-    camera: Optional[GiCameraService] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Entry point for running detection in a thread (shares camera with main process).
-    """
-    pipeline_device = device or cfg.mav.device2
-    drone = MatekService(device=pipeline_device, baud=baud or cfg.mav.baud)
-    pipeline = DetectionPipelineService(drone=drone, camera=camera, fps=fps)
-    try:
-        targets = pipeline.run(
-            stop_event=stop_event,
-            is_bottle=is_bottle,
-            geofence=geofence,
-            max_frames=max_frames,
-        )
-        if result_queue is not None:
-            result_queue.put(targets)
-        return targets
-    finally:
-        drone.close()

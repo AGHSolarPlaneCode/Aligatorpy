@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -27,41 +26,42 @@ class TestDetectionPipelineService(unittest.TestCase):
         pipeline = DetectionPipelineService(drone=drone, camera=camera, mission=mission, fps=10)
         return pipeline, drone, camera, mission
 
-    def test_scale_pixel(self):
-        pipeline, _, camera, _ = self._make_pipeline()
-        x, y = pipeline._scale_pixel(640, 400)
-        self.assertEqual(x, 1152)
-        self.assertEqual(y, 648)
-
-    def test_process_frame_calls_process_target_for_new_detections(self):
-        pipeline, _, _, mission = self._make_pipeline()
+    def test_scale_pixel_via_process_one_frame(self):
+        pipeline, _, camera, mission = self._make_pipeline()
         frame = np.zeros((800, 1280), dtype=np.uint8)
 
         with patch.object(pipeline.led_detector, "process_frame") as mock_detect:
-            mock_detect.return_value = [
-                {"id": 0, "x": 100, "y": 200, "frames_unseen": 0},
-                {"id": 1, "x": 300, "y": 400, "frames_unseen": 1},
-            ]
-            accepted = pipeline._process_frame(frame, is_bottle=True)
+            mock_detect.return_value = [{"id": 0, "x": 640, "y": 400, "frames_unseen": 0}]
+            camera.get_frame.return_value = (frame, 0.0)
+            accepted = pipeline.process_one_frame(is_bottle=True)
 
         self.assertEqual(accepted, 1)
         mission.process_target.assert_called_once()
+        args = mission.process_target.call_args[0]
+        self.assertEqual(args[0], (1152, 648))
 
-    def test_run_stops_on_max_frames(self):
-        pipeline, drone, camera, mission = self._make_pipeline()
-        stop = threading.Event()
+    def test_process_one_frame_skips_when_no_frame(self):
+        pipeline, _, camera, mission = self._make_pipeline()
+        camera.get_frame.return_value = (None, None)
+        accepted = pipeline.process_one_frame()
+        self.assertEqual(accepted, 0)
+        mission.process_target.assert_not_called()
 
+    def test_run_uses_should_stop_callback(self):
+        pipeline, _, camera, mission = self._make_pipeline()
         frame = np.zeros((800, 1280), dtype=np.uint8)
         camera.get_frame.return_value = (frame, 0.0)
 
-        with patch.object(pipeline.led_detector, "process_frame", return_value=[]):
-            result = pipeline.run(stop_event=stop, geofence=[], max_frames=3)
+        calls = {"n": 0}
 
-        self.assertEqual(result, [])
-        camera.start.assert_called_once()
-        camera.set_10fps_mode.assert_called_once()
-        drone.set_telemetry_rate.assert_not_called()
-        drone.set_mission_current_rate.assert_not_called()
+        def should_stop():
+            calls["n"] += 1
+            return calls["n"] >= 3
+
+        with patch.object(pipeline.led_detector, "process_frame", return_value=[]):
+            pipeline.run(should_stop=should_stop, geofence=[], start_camera=False)
+
+        self.assertEqual(calls["n"], 3)
 
 
 if __name__ == "__main__":

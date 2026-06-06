@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
-from queue import Queue
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from Application.Logger.log_module import get_logger
-from Application.Services.DetectionPipelineService import run_led_detection_pipeline
+from Application.Services.DetectionPipelineService import DetectionPipelineService
 from Application.Services.GiCameraService import GiCameraService
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionPlannerService import MissionPlannerService
@@ -17,14 +15,27 @@ from Application.configuration.config_loader import cfg
 
 
 class DroniadaMissionOrchestrator:
-    def __init__(self, dry_run: bool = False):
+    """
+    Orchestrator misji zawodów — jeden UART, jeden wątek MAVLink.
+
+    Kamera: GiCameraService (gi_camera_handler). Przy starcie pipeline
+    z bash ustaw manage_pipeline=False i attach_pipeline().
+    """
+
+    def __init__(self, dry_run: bool = False, camera: GiCameraService | None = None):
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
         self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
-        self.camera = GiCameraService()
+        self.camera = camera or GiCameraService()
         self.mission_cfg = cfg.mission
+        self.detection = DetectionPipelineService(
+            drone=self.drone,
+            camera=self.camera,
+            mission=self.mission,
+            fps=10,
+        )
 
     def _save_results(self, data: dict) -> None:
         path = cfg.dirs.targets_file
@@ -34,39 +45,35 @@ class DroniadaMissionOrchestrator:
         self.logger.info(f"Results saved to {path}")
 
     def _run_detection_phase(self) -> List[Dict[str, Any]]:
-        stop_event = threading.Event()
-        results_queue: Queue = Queue()
-        pipeline_thread = threading.Thread(
-            target=run_led_detection_pipeline,
-            kwargs={
-                "stop_event": stop_event,
-                "is_bottle": self.mission_cfg.is_bottle,
-                "fps": 10,
-                "device": cfg.mav.device2,
-                "baud": cfg.mav.baud,
-                "result_queue": results_queue,
-                "camera": self.camera,
-            },
-            daemon=True,
+        """
+        Detekcja LED w głównym wątku: monitor wp + klatki @ 10 Hz.
+        MAVLink (GPS/attitude/wp) tylko tutaj — bez drugiego UART.
+        """
+        self.detection.prepare(
+            is_bottle=self.mission_cfg.is_bottle,
+            start_camera=False,
         )
-        pipeline_thread.start()
         self.logger.info(
-            f"Detection phase: waiting for wp {self.mission_cfg.start_wp} -> {self.mission_cfg.stop_wp}"
+            f"Detection phase: wp {self.mission_cfg.start_wp} -> {self.mission_cfg.stop_wp}"
         )
 
-        targets: List[Dict[str, Any]] = []
+        interval = 1.0 / 10
         while True:
+            loop_start = time.monotonic()
+
             curr_wp = self.drone.get_mission_status()
             if curr_wp >= self.mission_cfg.stop_wp:
                 self.logger.info(f"Reached wp {curr_wp}, stopping detection")
-                stop_event.set()
                 break
-            time.sleep(0.2)
 
-        pipeline_thread.join(timeout=20)
-        if not results_queue.empty():
-            targets = results_queue.get()
+            self.detection.process_one_frame(is_bottle=self.mission_cfg.is_bottle)
 
+            elapsed = time.monotonic() - loop_start
+            remaining = interval - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+
+        targets = list(self.mission.TRG_CANDIDATES)
         self.logger.info(f"Detection phase complete: {len(targets)} targets")
         return targets
 
@@ -126,10 +133,12 @@ class DroniadaMissionOrchestrator:
 
     def run(self) -> dict:
         self.drone.set_mission_current_rate(10)
-        self.camera.start()
+        if self.camera.manage_pipeline:
+            self.camera.start()
+        else:
+            self.camera.set_10fps_mode()
 
         try:
-            # Phase 1: wait for detection start waypoint
             self.logger.info(f"Waiting for detection start wp {self.mission_cfg.start_wp}")
             while True:
                 curr_wp = self.drone.get_mission_status()
@@ -137,13 +146,11 @@ class DroniadaMissionOrchestrator:
                     break
                 time.sleep(0.2)
 
-            # Phase 2: LED detection
             targets = self._run_detection_phase()
             if not targets:
                 self.logger.warning("No targets detected — aborting mission extension")
                 return {"targets": [], "landing_sites": []}
 
-            # Phase 3: plan route and append LOITER waypoints
             coords = self.drone.get_current_coordinates()
             if coords is None:
                 self.logger.error("No GPS for route planning")
@@ -166,12 +173,10 @@ class DroniadaMissionOrchestrator:
             else:
                 self.logger.info(f"[dry-run] Would append {len(loiter_wps)} LOITER waypoints")
 
-            # Phase 4: OOK at each LOITER
             ook_results, landing_sites = self._run_loiter_and_ook_phase(
                 ordered, loiter_start_wp
             )
 
-            # Phase 5: send landing sites to plane
             if landing_sites and not self.dry_run:
                 self.drone.send_landing_sites(landing_sites)
             elif landing_sites:
@@ -190,8 +195,8 @@ class DroniadaMissionOrchestrator:
             self.drone.close()
 
 
-def main(dry_run: bool = False):
-    orchestrator = DroniadaMissionOrchestrator(dry_run=dry_run)
+def main(dry_run: bool = False, camera: GiCameraService | None = None):
+    orchestrator = DroniadaMissionOrchestrator(dry_run=dry_run, camera=camera)
     return orchestrator.run()
 
 
