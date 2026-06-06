@@ -1,4 +1,5 @@
 import gi
+import os   # for socket cleanup
 
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
@@ -18,7 +19,12 @@ FPS_LOW = 10
 class CameraPipeline:
     def __init__(self):
         Gst.init(None)
+
+        if not Gst.ElementFactory.find("shmsink"):
+            raise RuntimeError("shmsink plugin not found. Install gstreamer1.0-plugins-bad or -ugly")
+
         self.loop = GLib.MainLoop()
+        self.shm_socket_path = "/tmp/camera_stream"
 
         # ── Frame storage ──────────────────────────────────────────────────────
         self._lock_10fps = threading.Lock()
@@ -50,8 +56,18 @@ class CameraPipeline:
                 ! tee name=source_tee
 
             source_tee.
-                ! queue leaky=downstream max-size-buffers=1
-                ! fakesink sync=false
+                ! queue name=shm_q leaky=downstream max-size-buffers=1
+                ! videorate drop-only=true
+                ! video/x-raw,
+                    format={FORMAT},
+                    width={WIDTH},
+                    height={HEIGHT},
+                    framerate={FPS_STREAM}/1
+                ! shmsink
+                    socket-path={self.shm_socket_path}
+                    shm-size=2000000
+                    wait-for-connection=false
+                    sync=false
 
             source_tee.
                 ! queue name=local_q leaky=downstream max-size-buffers=1
@@ -102,7 +118,6 @@ class CameraPipeline:
 
         return pipeline
 
-    # ── Timing ───────────────────────────────────────────────────────────────
     def _get_running_time_ns(self):
         clock = self.pipeline.get_clock()
         if clock is None:
@@ -240,6 +255,14 @@ class CameraPipeline:
         print("[pipeline] stopping")
         self.pipeline.set_state(Gst.State.NULL)
         self.loop.quit()
+
+        try:
+            os.remove(self.shm_socket_path)
+            print(f"[pipeline] removed socket {self.shm_socket_path}")
+        except FileNotFoundError:
+            pass   # already gone, no problem
+        except Exception as e:
+            print(f"[pipeline] warning: could not remove socket: {e}")
 
 
 # ── Demo ─────────────────────────────────────────────────────────────────────
