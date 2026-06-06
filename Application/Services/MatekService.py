@@ -874,6 +874,22 @@ class MatekService:
         )
         self.logger.info(f"Zażądano message_id={message_id} z częstotliwością {hz}Hz ({interval_us}us)")
 
+    def set_telemetry_rate(self, hz: float = 10) -> None:
+        """Ustawia częstotliwość GPS (GLOBAL_POSITION_INT) i ATTITUDE."""
+        self.set_message_rate(33, hz)  # GLOBAL_POSITION_INT
+        self.set_message_rate(30, hz)  # ATTITUDE
+        self.set_message_rate(32, hz)  # WIND
+        self.set_message_rate(34, hz)  # GPS_RAW_INT
+        self.set_message_rate(35, hz)  # SYS_STATUS
+        self.set_message_rate(36, hz)  # SERVO_OUTPUT_RAW
+        self.set_message_rate(37, hz)  # MISSION_CURRENT
+        self.set_message_rate(38, hz)  # MISSION_ITEM_REACHED
+        self.set_message_rate(39, hz)  # MISSION_ITEM_INT
+        self.set_message_rate(40, hz)  # MISSION_COUNT
+        self.set_message_rate(41, hz)  # MISSION_ITEM
+        self.set_message_rate(42, hz)  # MISSION_REQUEST
+        self.set_message_rate(43, hz)  # MISSION_REQUEST_INT
+
     def close(self) -> None:
         """
         Closes the MAVLink connection.
