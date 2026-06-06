@@ -21,8 +21,9 @@ class TestMissionPlannerService(unittest.TestCase):
         ]
         ordered = self.planner.order_targets_nearest(50.0, 19.0, targets)
         self.assertEqual(len(ordered), 3)
-        self.assertAlmostEqual(ordered[0]["lat"], 50.001, places=4)
-
+        self.assertAlmostEqual(ordered[0]["lat"], 50.0, places=4)   # najbliższy startowi
+        self.assertAlmostEqual(ordered[1]["lat"], 50.001, places=4) # drugi
+        self.assertAlmostEqual(ordered[2]["lat"], 50.01, places=4)  # najdalszy
     def test_build_loiter_waypoints(self):
         targets = [{"lat": 50.0, "lon": 19.0, "count": 1}]
         wps = self.planner.build_loiter_waypoints(targets, self.loiter)

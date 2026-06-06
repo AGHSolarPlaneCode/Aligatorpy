@@ -46,24 +46,25 @@ def main():
     baud = args.baud or cfg.mav.baud
 
     print(f"Łączenie z kontrolerem lotu: {device} @ {baud}")
-    drone = MatekService(device=device, baud=baud)
-    drone.set_mission_current_rate(int(args.hz))
+    drone = MatekService(device=device)
+    print(device)
+    drone.set_mission_current_rate(10)
 
-    camera = None
-    cam_stop = threading.Event()
-    cam_thread = None
+    # camera = None
+    # cam_stop = threading.Event()
+    # cam_thread = None
 
-    if args.with_camera:
-        print("Uruchamiam kamerę w tle (10 fps)...")
-        camera = GiCameraService()
-        camera.start()
-        camera.set_10fps_mode()
-        cam_thread = threading.Thread(
-            target=_camera_loop, args=(camera, cam_stop), daemon=True
-        )
-        cam_thread.start()
+    # if args.with_camera:
+    #     print("Uruchamiam kamerę w tle (10 fps)...")
+    #     camera = GiCameraService()
+    #     camera.start()
+    #     camera.set_10fps_mode()
+    #     cam_thread = threading.Thread(
+    #         target=_camera_loop, args=(camera, cam_stop), daemon=True
+    #     )
+        # cam_thread.start()
 
-    interval = 1.0 / args.hz
+    interval = 1.0 / 10
     start = time.monotonic()
     read_count = 0
 
@@ -71,9 +72,10 @@ def main():
         while True:
             loop_start = time.monotonic()
 
-            coords = drone.get_current_coordinates(timeout=0.5)
-            attitude = drone.get_attitude(timeout=0.5)
             curr_wp = drone.get_mission_status()
+
+            coords = drone.get_current_coordinates(timeout=0.8)
+            attitude = drone.get_attitude(timeout=0.8)
             read_count += 1
 
             if coords and attitude:
@@ -100,11 +102,11 @@ def main():
     except KeyboardInterrupt:
         print("\nPrzerwano przez użytkownika.")
     finally:
-        cam_stop.set()
-        if cam_thread:
-            cam_thread.join(timeout=3)
-        if camera:
-            camera.stop()
+        # cam_stop.set()
+        # if cam_thread:
+        #     cam_thread.join(timeout=3)
+        # if camera:
+        #     camera.stop()
         drone.close()
         print(f"Podsumowanie: {read_count} odczytów telemetrii.")
 

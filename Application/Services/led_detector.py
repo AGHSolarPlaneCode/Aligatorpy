@@ -9,10 +9,10 @@ except ImportError:  # pragma: no cover
 
 
 class LedDetector:
-    THRESHOLD_VALUE = 200
-    MIN_AREA = 9
-    MAX_AREA = 400
-    MERGE_RADIUS = 50
+    THRESHOLD_VALUE = 210
+    MIN_AREA = 3
+    MAX_AREA = 200
+    MERGE_RADIUS = 25
 
     def __init__(self, width: int, height: int):
         self.width = width
@@ -31,7 +31,7 @@ class LedDetector:
         if frame.ndim == 1:
             return frame.reshape(self.height, self.width)
         if frame.ndim == 3:
-            return cv2.cvtColor(frame[: self.height, : self.width], cv2.COLOR_RGB2GRAY)
+            return frame[: self.height, : self.width, 0]  # weź tylko pierwszy kanał, są identyczne
         return frame[: self.height, : self.width]
 
     def process_frame(self, frame) -> list[dict]:

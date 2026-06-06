@@ -9,11 +9,15 @@ from Application.Services.MissionService import MissionService
 
 
 
-drone = MatekService(device="tcp:172.20.10.2:5763")
+drone = MatekService(device="tcp:192.168.0.204:5763")
 drone_mission = MissionService(drone) 
-print("Inicjalizacja programu")
+drone.set_mission_current_rate(10)
 
-drone.get_mission()
-print("Current mode: ", drone.get_current_mode())
-print("current waypoint: ", drone.get_mission_status())
-print("Attitude: ", drone.get_attitude())
+print("Inicjalizacja programu")
+while True:
+    drone.get_mission()
+    #print("Current mode: ", drone.get_current_mode())
+    #print("current waypoint: ", drone.get_mission_status())
+    print("Attitude: ", drone.get_attitude())
+    #print("cords: ", drone.get_current_coordinates())
+    

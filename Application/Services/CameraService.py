@@ -1,3 +1,5 @@
+#nieuzywane w droniadzie
+
 import os
 import csv
 import time
