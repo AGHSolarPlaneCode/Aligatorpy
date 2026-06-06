@@ -21,8 +21,8 @@ from typing import Any, List, Dict, Optional, Tuple
 
 from pymavlink import mavutil
 
-from Application.configuration.config_loader import cfg
-from Application.Logger.log_module import get_logger
+#from Application.configuration.config_loader import cfg
+#from Application.Logger.log_module import get_logger
 
 
 TelemetrySample = namedtuple("TelemetrySample", "ts lat lon alt roll pitch yaw")
@@ -38,9 +38,11 @@ class MatekService:
     BEACON_SERVO_CHANNEL = 8
     PWM_DROP_SERVO = 800
 
-    def __init__(self, device: str = cfg.mav.device, baud: int = cfg.mav.baud,    #  bez configa na sztywno
+    def __init__(self, device: str = cfg.mav.device, baud: int = 115200,  #na sztywno uart/tcp i baudrate
                  tele_buffer: int = 150):
-        self.logger = get_logger(__name__)
+        """Zamiast: mavutil.mavlink_connection('/dev/ttyAMA0', baud=115200)
+            mavutil.mavlink_connection('tcp:IP_TWOJEGO_LAPTOPA:5760')"""
+        #self.logger = get_logger(__name__)
         self.device = device
         self.baud = baud
 
@@ -308,9 +310,20 @@ class MatekService:
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
             message_id, interval_us, 0, 0, 0, 0, 0)
 
-    def request_streams(self, attitude_hz: float = 50, gps_hz: float = 15,
+    def request_streams(self, attitude_hz: float = 30, gps_hz: float = 10,
                         mission_current_hz: float = 5) -> None:
-        """Zażądaj strumieni potrzebnych do buforu telemetrii i nawigacji."""
+        """
+        Zażądaj strumieni potrzebnych do buforu telemetrii i nawigacji.
+
+        Domyślne wartości dobrane z myślą o UART na SpeedyBee F405 V5:
+          - ATTITUDE 30 Hz: przy locie 5 m/s i 30 fps klatki co ~33 ms; próbka
+            telemetrii co ~33 ms → interpolacja zawsze trafia między dwie sąsiednie
+            próbki (max odstęp ≈ 33 ms ≈ odległość ~17 cm przy 5 m/s).
+          - GLOBAL_POSITION_INT 10 Hz: GPS i tak nie ma lepszej rozdzielczości,
+            wyższa częstotliwość tylko kopiuje ostatnią fiksację z wewnętrznego
+            filtra ArduPilota. 10 Hz = jedno odświeżenie co 100 ms.
+          - MISSION_CURRENT 5 Hz: do śledzenia aktualnego WP w misji AUTO.
+        """
         self.set_message_rate(30, attitude_hz)            # ATTITUDE
         self.set_message_rate(33, gps_hz)                 # GLOBAL_POSITION_INT
         self.set_message_rate(42, mission_current_hz)     # MISSION_CURRENT
@@ -447,8 +460,13 @@ class MatekService:
                     return False
 
             ack = self._proto_get(("MISSION_ACK",))
-            if ack:
-                self.logger.info("Mission ACK: %s", ack.type)
+            if ack is None:
+                self.logger.error("Brak MISSION_ACK — upload misji niepotwierdzony")
+                return False
+            if ack.type != 0:
+                self.logger.error("Upload misji odrzucony przez FC (ack.type=%s)", ack.type)
+                return False
+            self.logger.info("Upload misji OK (%s punktów)", len(all_wps))
             return True
 
     def append_waypoints(self, new_wps: List[Dict[str, Any]]) -> bool:
