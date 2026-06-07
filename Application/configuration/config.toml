@@ -69,7 +69,7 @@ search_zone_path = "sloszowa_droniada_T.poly"
 
 [mission]
 start_wp = 3
-stop_wp = 4
+stop_wp = 6
 is_bottle = true
 
 [mission.loiter]
