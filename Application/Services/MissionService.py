@@ -124,13 +124,13 @@ class MissionService:
 
     def process_target(self, pixel, isBottle: bool, search_zone)-> bool:
         msg_gps = self.drone.get_current_coordinates()
-        if msg_gps is None:
-            return None
-        lat_uav, lon_uav, alt_uav = msg_gps
         msg_att = self.drone.get_attitude()
         if msg_att is None:
             return None
         roll, pitch, yaw = msg_att
+        if msg_gps is None:
+            return None
+        lat_uav, lon_uav, alt_uav = msg_gps
 
         res = self.project_target_cords(pixel, lat_uav, lon_uav, alt_uav, roll, pitch, yaw)
         if res is None:

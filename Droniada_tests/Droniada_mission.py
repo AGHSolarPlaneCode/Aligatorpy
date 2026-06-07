@@ -89,6 +89,7 @@ class DroniadaMissionOrchestrator:
         ordered_targets: List[Dict[str, Any]],
         loiter_start_wp: int,
     ) -> Tuple[List[Dict[str, Any]], List[Tuple[float, float]]]:
+    
         ook_service = OokDetectionService(self.camera)
         ook_results: List[Dict[str, Any]] = []
         landing_sites: List[Tuple[float, float]] = []

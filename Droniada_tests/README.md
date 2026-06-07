@@ -12,6 +12,23 @@
 python Droniada_tests/run_unit_tests.py
 ```
 
+### Projekcja piksel → GPS (`process_one_frame` → `process_target`)
+
+Testy sprawdzają łańcuch używany w `Droniada_mission._run_detection_phase`:
+`_scale_pixel` → `process_target` → `project_target_cords` (undistort, promień, przecięcie z ziemią @ 50 m).
+
+```bash
+python Droniada_tests/unit/test_pixel_projection.py
+```
+
+Wizualizacja siatki 10×10 na mapie (wymaga `matplotlib`):
+
+```bash
+python Droniada_tests/live/live_pixel_projection_map.py
+python Droniada_tests/live/live_pixel_projection_map.py --roll 10 --pitch 5 --alt 50
+python Droniada_tests/live/live_pixel_projection_map.py --output media/projection_map.png --no-show
+```
+
 ## Testy live (RPi)
 
 ```bash
