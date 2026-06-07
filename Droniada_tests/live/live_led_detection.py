@@ -15,7 +15,7 @@ import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.led_detector import LedDetector
 
 
@@ -25,13 +25,13 @@ def main():
     parser.add_argument("--fps", type=float, default=10.0, help="Target loop rate")
     args = parser.parse_args()
 
-    camera = GiCameraService()
+    camera = CameraPipeline()
     detector = LedDetector(camera.WIDTH, camera.HEIGHT)
     seen_ids: set[int] = set()
 
     print(f"Uruchamiam kamerę ({camera.WIDTH}x{camera.HEIGHT}) w trybie 10 fps...")
     camera.start()
-    camera.set_10fps_mode()
+    camera.set_10fps_active(True)
 
     interval = 1.0 / args.fps
     frame_count = 0
@@ -40,7 +40,7 @@ def main():
         while True:
             loop_start = time.monotonic()
 
-            frame, ts = camera.get_frame()
+            frame, ts, _ = camera.get_image()
             if frame is None:
                 time.sleep(0.05)
                 continue

@@ -6,7 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from Application.Logger.log_module import get_logger
 from Application.Services.DetectionPipelineService import DetectionPipelineService
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
 from Application.configuration.config_loader import cfg
@@ -27,7 +27,7 @@ def main():
     interval = 1.0 / fps
 
     drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
-    camera = GiCameraService()
+    camera = CameraPipeline()
     mission = MissionService(drone)
     pipeline = DetectionPipelineService(drone=drone, camera=camera, mission=mission, fps=fps)
 

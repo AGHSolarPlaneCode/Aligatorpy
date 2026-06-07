@@ -9,12 +9,12 @@ import numpy as np
 from Application.Logger.log_module import get_logger
 from Application.OOK_detection.ook import ook_brightness
 from Application.OOK_detection.ook_worker import run_ook_worker
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.configuration.config_loader import OokConfig, cfg
 
 
 class OokDetectionService:
-    def __init__(self, camera: GiCameraService, ook_config: Optional[OokConfig] = None):
+    def __init__(self, camera: CameraPipeline, ook_config: Optional[OokConfig] = None):
         self.logger = get_logger(__name__)
         self.camera = camera
         self.config = ook_config or cfg.mission.ook
@@ -35,7 +35,7 @@ class OokDetectionService:
         return frame[y1:y2, x1:x2]
 
     def detect_modulation(self) -> Dict[str, Any]:
-        self.camera.set_120fps_mode()
+        self.camera.set_120fps_active(True)
 
         sample_queue = Queue()
         result_queue = Queue()
@@ -55,7 +55,7 @@ class OokDetectionService:
         deadline = time.monotonic() + self.config.duration_s
         samples_sent = 0
         while time.monotonic() < deadline:
-            frame, ts = self.camera.get_frame()
+            frame, ts, _ = self.camera.get_image()
             if frame is not None and ts is not None:
                 roi = self.extract_center_roi(frame, self.config.roi_size)
                 brightness = ook_brightness(roi, self.config.brightness_threshold)
@@ -65,7 +65,7 @@ class OokDetectionService:
         sample_queue.put(None)
         worker.join(timeout=5)
 
-        self.camera.set_10fps_mode()
+        self.camera.set_10fps_active(True)
 
         if result_queue.empty():
             self.logger.warning("OOK worker returned no result")

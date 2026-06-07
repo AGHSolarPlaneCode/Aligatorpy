@@ -11,7 +11,7 @@ except ImportError:  # pragma: no cover
 class LedDetector:
     THRESHOLD_VALUE = 210
     MIN_AREA = 3
-    MAX_AREA = 200
+    MAX_AREA = 500
     MERGE_RADIUS = 25
 
     def __init__(self, width: int, height: int):
@@ -29,10 +29,17 @@ class LedDetector:
             raise RuntimeError("OpenCV/numpy are required for LED detection")
 
         if frame.ndim == 1:
-            return frame.reshape(self.height, self.width)
-        if frame.ndim == 3:
-            return frame[: self.height, : self.width, 0]  # weź tylko pierwszy kanał, są identyczne
-        return frame[: self.height, : self.width]
+            gray = frame.reshape(self.height, self.width)
+        elif frame.ndim == 3:
+            gray = frame[: self.height, : self.width, 0]
+        else:
+            gray = frame[: self.height, : self.width]
+
+        # OV9281 daje 16-bit, findContours wymaga 8-bit
+        if gray.dtype != np.uint8:
+            gray = (gray >> 8).astype(np.uint8)  # przesunięcie bitowe 16→8
+
+        return gray
 
     def process_frame(self, frame) -> list[dict]:
         gray = self._to_gray(frame)

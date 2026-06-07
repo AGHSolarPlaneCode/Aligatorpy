@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.OokDetectionService import OokDetectionService
 from Application.configuration.config_loader import cfg
 
@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--duration", type=float, default=None, help="Override duration_s from config")
     args = parser.parse_args()
 
-    camera = GiCameraService()
+    camera = CameraPipeline()
     print("Uruchamiam kamerę...")
     camera.start()
 
@@ -33,16 +33,18 @@ def main():
 
     service = OokDetectionService(camera, ook_cfg)
     print(f"Rozpoczynam OOK przez {ook_cfg.duration_s}s @ 120fps...")
+    for i in range(1000):
+        try:
+            result = service.detect_modulation()
+            print(f"Wynik OOK: freq={result['freq']}Hz, confidence={result['confidence']:.2f}, samples={result['samples']}")
+            if result["freq"] is not None and result["confidence"] >= ook_cfg.min_confidence:
+                print(f"[OK] Modulacja potwierdzona: {result['freq']} Hz")
+            else:
+                print("[WARN] Brak wyraźnej modulacji OOK")
+        finally:
+            #camera.stop()
+            print("jest super")
 
-    try:
-        result = service.detect_modulation()
-        print(f"Wynik OOK: freq={result['freq']}Hz, confidence={result['confidence']:.2f}, samples={result['samples']}")
-        if result["freq"] is not None and result["confidence"] >= ook_cfg.min_confidence:
-            print(f"[OK] Modulacja potwierdzona: {result['freq']} Hz")
-        else:
-            print("[WARN] Brak wyraźnej modulacji OOK")
-    finally:
-        camera.stop()
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ class TestOokDetectionService(unittest.TestCase):
     @patch("Application.Services.OokDetectionService.Process")
     def test_detect_modulation_returns_result(self, mock_process_cls):
         camera = MagicMock()
-        camera.get_frame.return_value = (np.full((80, 128), 255, dtype=np.uint8), 0.0)
+        camera.get_image.return_value = (np.full((80, 128), 255, dtype=np.uint8), 0.0, None)
 
         mock_worker = MagicMock()
         mock_process_cls.return_value = mock_worker
@@ -42,8 +42,8 @@ class TestOokDetectionService(unittest.TestCase):
             result = service.detect_modulation()
 
         self.assertEqual(result["freq"], 5.0)
-        camera.set_120fps_mode.assert_called_once()
-        camera.set_10fps_mode.assert_called_once()
+        camera.set_120fps_active.assert_called_once_with(True)
+        camera.set_10fps_active.assert_called_once_with(True)
 
 
 if __name__ == "__main__":

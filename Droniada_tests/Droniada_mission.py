@@ -1,4 +1,9 @@
 from __future__ import annotations
+import sys
+import os
+from pathlib import Path
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import json
 import time
@@ -6,7 +11,7 @@ from typing import Any, Dict, List, Tuple
 
 from Application.Logger.log_module import get_logger
 from Application.Services.DetectionPipelineService import DetectionPipelineService
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionPlannerService import MissionPlannerService
 from Application.Services.MissionService import MissionService
@@ -14,21 +19,22 @@ from Application.Services.OokDetectionService import OokDetectionService
 from Application.configuration.config_loader import cfg
 
 
+
 class DroniadaMissionOrchestrator:
     """
     Orchestrator misji zawodów — jeden UART, jeden wątek MAVLink.
 
-    Kamera: GiCameraService (gi_camera_handler). Przy starcie pipeline
-    z bash ustaw manage_pipeline=False i attach_pipeline().
+    Kamera: CameraPipeline (gi_camera_handler) w głównym wątku.
     """
 
-    def __init__(self, dry_run: bool = False, camera: GiCameraService | None = None):
+    def __init__(self, dry_run: bool = False, camera: CameraPipeline | None = None):
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
-        self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        self.drone = MatekService(device="tcp:192.168.0.186:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
-        self.camera = camera or GiCameraService()
+        self.camera = camera or CameraPipeline()
         self.mission_cfg = cfg.mission
         self.detection = DetectionPipelineService(
             drone=self.drone,
@@ -62,6 +68,7 @@ class DroniadaMissionOrchestrator:
             loop_start = time.monotonic()
 
             curr_wp = self.drone.get_mission_status()
+            print(f"Detection phase - current waypoint: {curr_wp}")
             if curr_wp >= self.mission_cfg.stop_wp:
                 self.logger.info(f"Reached wp {curr_wp}, stopping detection")
                 break
@@ -132,19 +139,21 @@ class DroniadaMissionOrchestrator:
         return ook_results, landing_sites
 
     def run(self) -> dict:
-        self.drone.set_mission_current_rate(10)
-        if self.camera.manage_pipeline:
-            self.camera.start()
-        else:
-            self.camera.set_10fps_mode()
+        #self.drone.set_mission_current_rate(10)
+        self.drone.set_telemetry_rate(10)
+        self.camera.start()
+        self.camera.set_10fps_active(True)
+        if not self.camera.wait_ready():
+            self.logger.warning("Camera pipeline started but no frame yet")
 
         try:
             self.logger.info(f"Waiting for detection start wp {self.mission_cfg.start_wp}")
             while True:
                 curr_wp = self.drone.get_mission_status()
+                print(f"Waiting for detection start wp {self.mission_cfg.start_wp}, current waypoint: {curr_wp}")
                 if curr_wp == self.mission_cfg.start_wp:
                     break
-                time.sleep(0.2)
+                time.sleep(0.1)
 
             targets = self._run_detection_phase()
             if not targets:
@@ -195,7 +204,7 @@ class DroniadaMissionOrchestrator:
             self.drone.close()
 
 
-def main(dry_run: bool = False, camera: GiCameraService | None = None):
+def main(dry_run: bool = False, camera: CameraPipeline | None = None):
     orchestrator = DroniadaMissionOrchestrator(dry_run=dry_run, camera=camera)
     return orchestrator.run()
 

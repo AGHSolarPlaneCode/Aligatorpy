@@ -32,7 +32,7 @@ class TestDetectionPipelineService(unittest.TestCase):
 
         with patch.object(pipeline.led_detector, "process_frame") as mock_detect:
             mock_detect.return_value = [{"id": 0, "x": 640, "y": 400, "frames_unseen": 0}]
-            camera.get_frame.return_value = (frame, 0.0)
+            camera.get_image.return_value = (frame, 0.0, None)
             accepted = pipeline.process_one_frame(is_bottle=True)
 
         self.assertEqual(accepted, 1)
@@ -42,7 +42,7 @@ class TestDetectionPipelineService(unittest.TestCase):
 
     def test_process_one_frame_skips_when_no_frame(self):
         pipeline, _, camera, mission = self._make_pipeline()
-        camera.get_frame.return_value = (None, None)
+        camera.get_image.return_value = (None, None, "No active branch")
         accepted = pipeline.process_one_frame()
         self.assertEqual(accepted, 0)
         mission.process_target.assert_not_called()
@@ -50,7 +50,7 @@ class TestDetectionPipelineService(unittest.TestCase):
     def test_run_uses_should_stop_callback(self):
         pipeline, _, camera, mission = self._make_pipeline()
         frame = np.zeros((800, 1280), dtype=np.uint8)
-        camera.get_frame.return_value = (frame, 0.0)
+        camera.get_image.return_value = (frame, 0.0, None)
 
         calls = {"n": 0}
 

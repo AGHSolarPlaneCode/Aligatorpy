@@ -1,12 +1,11 @@
 import gi
 import os   # for socket cleanup
+import time
 
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
-import threading
 import signal
 import numpy as np
-from typing import Tuple
 
 # ── Configuration ────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 640, 400
@@ -17,6 +16,9 @@ FPS_LOW = 10
 
 
 class CameraPipeline:
+    WIDTH = WIDTH
+    HEIGHT = HEIGHT
+
     def __init__(self):
         Gst.init(None)
 
@@ -26,16 +28,11 @@ class CameraPipeline:
         self.loop = GLib.MainLoop()
         self.shm_socket_path = "/tmp/camera_stream"
 
-        # ── Frame storage ──────────────────────────────────────────────────────
-        self._lock_10fps = threading.Lock()
+        # ── Frame storage (główny wątek — bez locków) ───────────────────────────
         self._frame_10fps = None
         self._ts_10fps = None
-
-        self._lock_120fps = threading.Lock()
         self._frame_120fps = None
         self._ts_120fps = None
-
-        self._lock_valve = threading.Lock()
         self._base_time_ns = 0
 
         self.pipeline = self._build_pipeline()
@@ -165,9 +162,8 @@ class CameraPipeline:
         if frame is None:
             return Gst.FlowReturn.OK
 
-        with self._lock_10fps:
-            self._frame_10fps = frame
-            self._ts_10fps = ts
+        self._frame_10fps = frame
+        self._ts_10fps = ts
 
         return Gst.FlowReturn.OK
 
@@ -176,44 +172,41 @@ class CameraPipeline:
         if frame is None:
             return Gst.FlowReturn.OK
 
-        with self._lock_120fps:
-            self._frame_120fps = frame
-            self._ts_120fps = ts
+        self._frame_120fps = frame
+        self._ts_120fps = ts
 
         return Gst.FlowReturn.OK
 
-    # ── Public API ───────────────────────────────────────────────────────────
+    def _pump(self) -> None:
+        GLib.MainContext.default().iteration(False)
+
     def get_image(self):
-        with self._lock_valve:
-            v10 = not self.valve_10fps.get_property("drop")
-            v120 = not self.valve_120fps.get_property("drop")
+        self._pump()
+        v10 = not self.valve_10fps.get_property("drop")
+        v120 = not self.valve_120fps.get_property("drop")
 
         if v10:
-            with self._lock_10fps:
-                return self._frame_10fps, self._ts_10fps, None
+            return self._frame_10fps, self._ts_10fps, None
 
         if v120:
-            with self._lock_120fps:
-                return self._frame_120fps, self._ts_120fps, None
+            return self._frame_120fps, self._ts_120fps, None
 
         return None, None, "No active branch"
 
     # ── Control ───────────────────────────────────────────────────────────────
     def set_10fps_active(self, active: bool):
-        with self._lock_valve:
-            if active:
-                self.valve_120fps.set_property("drop", True)
-                self.valve_10fps.set_property("drop", False)
-            else:
-                self.valve_10fps.set_property("drop", True)
+        if active:
+            self.valve_120fps.set_property("drop", True)
+            self.valve_10fps.set_property("drop", False)
+        else:
+            self.valve_10fps.set_property("drop", True)
 
     def set_120fps_active(self, active: bool):
-        with self._lock_valve:
-            if active:
-                self.valve_10fps.set_property("drop", True)
-                self.valve_120fps.set_property("drop", False)
-            else:
-                self.valve_120fps.set_property("drop", True)
+        if active:
+            self.valve_10fps.set_property("drop", True)
+            self.valve_120fps.set_property("drop", False)
+        else:
+            self.valve_120fps.set_property("drop", True)
 
     # ── Bus ───────────────────────────────────────────────────────────────────
     def _connect_bus(self):
@@ -246,8 +239,22 @@ class CameraPipeline:
         print("[WARN]", warn.message)
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
-    def start(self):
+    def start(self) -> None:
+        """Uruchamia pipeline w głównym wątku — GLib obsługiwany w get_image()."""
         self.pipeline.set_state(Gst.State.PLAYING)
+        signal.signal(signal.SIGINT, lambda *_: self.stop())
+
+    def wait_ready(self, timeout: float = 10.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            frame, _, _ = self.get_image()
+            if frame is not None:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def run(self) -> None:
+        """Blokująca pętla GLib — tylko dla uruchomienia standalone (__main__)."""
         signal.signal(signal.SIGINT, lambda *_: self.stop())
         self.loop.run()
 
@@ -267,21 +274,26 @@ class CameraPipeline:
 
 # ── Demo ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    import time
-
     cam = CameraPipeline()
-
-    def demo():
-        while True:
-            cam.set_10fps_active(True)
-            time.sleep(2)
-            f, t, _ = cam.get_image()
-            print("10fps:", None if f is None else f.shape, t)
-
-            cam.set_120fps_active(True)
-            time.sleep(2)
-            f, t, _ = cam.get_image()
-            print("60fps:", None if f is None else f.shape, t)
-
-    threading.Thread(target=demo, daemon=True).start()
     cam.start()
+    mode_10 = True
+    last_switch = time.monotonic()
+
+    try:
+        while True:
+            if time.monotonic() - last_switch >= 2:
+                mode_10 = not mode_10
+                if mode_10:
+                    cam.set_10fps_active(True)
+                    label = "10fps"
+                else:
+                    cam.set_120fps_active(True)
+                    label = "120fps"
+                f, t, _ = cam.get_image()
+                print(label + ":", None if f is None else f.shape, t)
+                last_switch = time.monotonic()
+            time.sleep(0.01)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cam.stop()

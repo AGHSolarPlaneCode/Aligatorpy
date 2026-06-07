@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from Application.Logger.log_module import get_logger
-from Application.Services.GiCameraService import GiCameraService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
 from Application.Services.led_detector import LedDetector
@@ -18,7 +18,7 @@ class DetectionPipelineService:
     Wymaga jednego połączenia MAVLink — wywołuj process_one_frame() wyłącznie
     z głównego wątku (process_target() czyta GPS/attitude z MatekService).
 
-    Kamera: GiCameraService (gi_camera_handler) — współdzielona z resztą misji.
+    Kamera: CameraPipeline (gi_camera_handler) — współdzielona z resztą misji.
     """
 
     DEFAULT_FPS = 10
@@ -26,7 +26,7 @@ class DetectionPipelineService:
     def __init__(
         self,
         drone: MatekService,
-        camera: GiCameraService,
+        camera: CameraPipeline,
         mission: Optional[MissionService] = None,
         fps: int = DEFAULT_FPS,
     ):
@@ -58,7 +58,7 @@ class DetectionPipelineService:
         if start_camera:
             self.camera.start()
 
-        self.camera.set_10fps_mode()
+        self.camera.set_10fps_active(True)
         self.led_detector.reset()
         self.logger.info(
             f"Detection pipeline prepared @ {self.fps}Hz (is_bottle={is_bottle})"
@@ -71,12 +71,14 @@ class DetectionPipelineService:
 
     def process_one_frame(self, is_bottle: bool = True) -> int:
         """
-        Jedna iteracja: klatka z GiCameraService + detekcja + process_target().
+        Jedna iteracja: klatka z CameraPipeline + detekcja + process_target().
         Wywoływać tylko z głównego wątku (MAVLink).
         """
-        frame, _ = self.camera.get_frame()
+        frame, _, err = self.camera.get_image()
         if frame is None:
             return 0
+        if err:
+            self.logger.debug(f"get_image: {err}")
 
         targets = self.led_detector.process_frame(frame)
         accepted = 0
