@@ -9,7 +9,7 @@ from typing import Tuple
 
 # ── Configuration ────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 1280, 800
-FPS_SOURCE = 120
+FPS_SOURCE = 60
 FORMAT = "GRAY8"  # OV9281 is monochrome
 FPS_STREAM = 60  # streaming branch framerate (after crop)
 FPS_LOW = 10  # low‑rate processing branch
