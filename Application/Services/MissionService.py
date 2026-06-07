@@ -26,16 +26,36 @@ class MissionService:
     dist = cfg.camera.distortion
 
     
+    # def rot_matrix(self, roll, pitch, yaw):
+    #     Rx = np.array([[ np.cos(roll), 0, -np.sin(roll)],
+    #                 [0, 1, 0],
+    #                 [np.sin(roll), 0, np.cos(roll)]])
+    #     Ry = np.array([[1, 0, 0],
+    #                 [0, np.cos(pitch), np.sin(pitch)],
+    #                 [0, -np.sin(pitch),  np.cos(pitch)]])
+    #     Rz = np.array([[np.cos(yaw), np.sin(yaw), 0],
+    #                 [-np.sin(yaw),  np.cos(yaw), 0],
+    #                 [0, 0, 1]])
+    #     return Rz @ Ry @ Rx
     def rot_matrix(self, roll, pitch, yaw):
-        Rx = np.array([[ np.cos(roll), 0, -np.sin(roll)],
-                    [0, 1, 0],
-                    [np.sin(roll), 0, np.cos(roll)]])
-        Ry = np.array([[1, 0, 0],
-                    [0, np.cos(pitch), np.sin(pitch)],
-                    [0, -np.sin(pitch),  np.cos(pitch)]])
-        Rz = np.array([[np.cos(yaw), np.sin(yaw), 0],
-                    [-np.sin(yaw),  np.cos(yaw), 0],
-                    [0, 0, 1]])
+        # Rx - rotacja wokół X (roll)
+        Rx = np.array([
+            [1, 0,            0           ],
+            [0, np.cos(roll), -np.sin(roll)],
+            [0, np.sin(roll),  np.cos(roll)]
+        ])
+        # Ry - rotacja wokół Y (pitch)
+        Ry = np.array([
+            [ np.cos(pitch), 0, np.sin(pitch)],
+            [0,              1, 0            ],
+            [-np.sin(pitch), 0, np.cos(pitch)]
+        ])
+        # Rz - rotacja wokół Z (yaw)
+        Rz = np.array([
+            [np.cos(yaw), -np.sin(yaw), 0],
+            [np.sin(yaw),  np.cos(yaw), 0],
+            [0,            0,           1]
+        ])
         return Rz @ Ry @ Rx
 
     def project_target_cords(self, pixel: tuple, lat_uav, lon_uav, alt_uav,roll, pitch, yaw)->tuple:
@@ -65,7 +85,7 @@ class MissionService:
         x_u, y_u = undistorted[0,0]
         
         # promień w układzie kamery
-        ray_cam = np.array([x_u, -y_u, 1.0])
+        ray_cam = np.array([x_u, y_u, 1.0]) #minus przy y_u
         ray_cam /= np.linalg.norm(ray_cam)
 
         R_world_body = self.rot_matrix(roll, pitch, yaw)
