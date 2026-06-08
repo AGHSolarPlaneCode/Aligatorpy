@@ -11,34 +11,34 @@ wind_direction = 270
 altitude = 60
 
 [drops.beacon]
-mass = 165
+mass = 500
 cd = 1
 drop_course = 10
-x_translation = -45.62005614816896
-y_translation = 10.394985962957753
+x_translation = -59.73950087139867
+y_translation = 4.115124782150331
 
 [drops.bottle]
-mass = 200
-cd = 1
+mass = 500
+cd = 0.2
 drop_course = 10
-x_translation = -40.852570470817724
-y_translation = 12.786857382295567
+x_translation = -66.33412669407143
+y_translation = 1.4164683264821387
 
 [camera]
 resolution = [
-    2304,
-    1296,
+    640,
+    400,
 ]
 K = [
     [
-        1773.9244383143994,
+        346.2295,
         0.0,
-        1152.0,
+        317.76,
     ],
     [
         0.0,
-        1733.1547280645818,
-        648.0,
+        346.2628,
+        197.64,
     ],
     [
         0.0,
@@ -47,11 +47,11 @@ K = [
     ],
 ]
 distortion = [
-    -0.1359832,
-    0.36278877,
-    0.02114295,
-    0.02506856,
-    -0.21990155,
+    -0.34219431,
+    0.123526508,
+    0.00470056821,
+    -0.000109821856,
+    -0.0211505931,
 ]
 
 [dirs]
@@ -59,9 +59,44 @@ logs_dir = "media/logs"
 photos_dir = "media/photos"
 videos_dir = "media/videos"
 zones_dir = "configuration/zones"
+targets_file = "media/droniada_targets.json"
 
 [system]
 debug_mode = false
 
 [zones]
-search_zone_path = "Sloszowa_target_detection_1.poly"
+search_zone_path = "sloszowa_droniada_T.poly"
+
+[mission]
+start_wp = 3
+stop_wp = 6
+is_bottle = true
+
+[mission.loiter]
+time = 15
+alt = 60
+radius = 50
+
+[mission.ook]
+duration_s = 10
+candidates = [
+    2.0,
+    4.0,
+    6.0,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18,
+    20,
+    25,
+    90,
+    94,
+    96,
+    98,
+    100,
+]
+min_confidence = 4.0
+roi_size = 40
+brightness_threshold = 220

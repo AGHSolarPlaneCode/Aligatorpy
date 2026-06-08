@@ -26,16 +26,36 @@ class MissionService:
     dist = cfg.camera.distortion
 
     
+    # def rot_matrix(self, roll, pitch, yaw):
+    #     Rx = np.array([[ np.cos(roll), 0, -np.sin(roll)],
+    #                 [0, 1, 0],
+    #                 [np.sin(roll), 0, np.cos(roll)]])
+    #     Ry = np.array([[1, 0, 0],
+    #                 [0, np.cos(pitch), np.sin(pitch)],
+    #                 [0, -np.sin(pitch),  np.cos(pitch)]])
+    #     Rz = np.array([[np.cos(yaw), np.sin(yaw), 0],
+    #                 [-np.sin(yaw),  np.cos(yaw), 0],
+    #                 [0, 0, 1]])
+    #     return Rz @ Ry @ Rx
     def rot_matrix(self, roll, pitch, yaw):
-        Rx = np.array([[ np.cos(roll), 0, -np.sin(roll)],
-                    [0, 1, 0],
-                    [np.sin(roll), 0, np.cos(roll)]])
-        Ry = np.array([[1, 0, 0],
-                    [0, np.cos(pitch), np.sin(pitch)],
-                    [0, -np.sin(pitch),  np.cos(pitch)]])
-        Rz = np.array([[np.cos(yaw), np.sin(yaw), 0],
-                    [-np.sin(yaw),  np.cos(yaw), 0],
-                    [0, 0, 1]])
+        # Rx - rotacja wokół X (roll)
+        Rx = np.array([
+            [1, 0,            0           ],
+            [0, np.cos(roll), -np.sin(roll)],
+            [0, np.sin(roll),  np.cos(roll)]
+        ])
+        # Ry - rotacja wokół Y (pitch)
+        Ry = np.array([
+            [ np.cos(pitch), 0, np.sin(pitch)],
+            [0,              1, 0            ],
+            [-np.sin(pitch), 0, np.cos(pitch)]
+        ])
+        # Rz - rotacja wokół Z (yaw)
+        Rz = np.array([
+            [np.cos(yaw), -np.sin(yaw), 0],
+            [np.sin(yaw),  np.cos(yaw), 0],
+            [0,            0,           1]
+        ])
         return Rz @ Ry @ Rx
 
     def project_target_cords(self, pixel: tuple, lat_uav, lon_uav, alt_uav,roll, pitch, yaw)->tuple:
@@ -65,7 +85,7 @@ class MissionService:
         x_u, y_u = undistorted[0,0]
         
         # promień w układzie kamery
-        ray_cam = np.array([x_u, -y_u, 1.0])
+        ray_cam = np.array([x_u, y_u, 1.0]) #minus przy y_u
         ray_cam /= np.linalg.norm(ray_cam)
 
         R_world_body = self.rot_matrix(roll, pitch, yaw)
@@ -124,13 +144,13 @@ class MissionService:
 
     def process_target(self, pixel, isBottle: bool, search_zone)-> bool:
         msg_gps = self.drone.get_current_coordinates()
-        if msg_gps is None:
-            return None
-        lat_uav, lon_uav, alt_uav = msg_gps
         msg_att = self.drone.get_attitude()
         if msg_att is None:
             return None
         roll, pitch, yaw = msg_att
+        if msg_gps is None:
+            return None
+        lat_uav, lon_uav, alt_uav = msg_gps
 
         res = self.project_target_cords(pixel, lat_uav, lon_uav, alt_uav, roll, pitch, yaw)
         if res is None:
@@ -160,6 +180,33 @@ class MissionService:
         # Zastąp listę tylko tymi dwoma
         self.TRG_CANDIDATES = top_two
         return top_two
+
+
+    def process_landing_sites(self, sites: list[tuple[float, float]]) -> bool:
+        """
+        Przyjmuje listę lądowisk od drona i wysyła waypoints zrzutu do autopilota.
+        Args:
+            sites: lista tupli (lat, lon)
+        """
+        if not sites:
+            self.logger.warning("process_landing_sites: empty sites list")
+            return False
+
+        attitude = self.drone.get_attitude()
+        if attitude is None:
+            self.logger.error("process_landing_sites: no attitude data")
+            return False
+
+        container = []
+        yaw = attitude[2]
+
+        for lat, lon in sites:
+            drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": False})
+            self.calc_drop_waypoints(drop_point, yaw, container)
+
+        ok = self.drone.append_waypoints(container)
+        self.logger.info(f"process_landing_sites: sent {len(container)} waypoints, ok={ok}")
+        return ok
 
 
     def calc_drop_coords(self, trg_dict: dict) -> Tuple[float, float]:

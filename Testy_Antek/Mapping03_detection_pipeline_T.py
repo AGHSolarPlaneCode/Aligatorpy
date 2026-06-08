@@ -1,14 +1,14 @@
 import os
 import sys
-import threading
 import time
-from queue import Queue
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from Application.Logger.log_module import get_logger
-from Application.Services.DetectionPipelineService import run_led_detection_pipeline
+from Application.Services.DetectionPipelineService import DetectionPipelineService
+from Application.Services.gi_camera_handler import CameraPipeline
 from Application.Services.MatekService import MatekService
+from Application.Services.MissionService import MissionService
 from Application.configuration.config_loader import cfg
 
 
@@ -21,62 +21,52 @@ def log_targets(logger, targets):
 def main():
     logger = get_logger(__name__)
 
-    start_wp = 5
-    stop_wp = 96
-    is_bottle = True
+    start_wp = cfg.mission.start_wp
+    stop_wp = cfg.mission.stop_wp
     fps = 10
+    interval = 1.0 / fps
 
-    # Główna pętla misji — osobne połączenie MAVLink (device)
     drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
-    drone.set_mission_current_rate(10)
+    camera = CameraPipeline()
+    mission = MissionService(drone)
+    pipeline = DetectionPipelineService(drone=drone, camera=camera, mission=mission, fps=fps)
 
-    stop_event = threading.Event()
-    results_queue = Queue()
-    pipeline_thread = None
-    pipeline_started = False
+    drone.set_mission_current_rate(10)
+    camera.start()
     targets = []
 
     try:
+        pipeline_started = False
+
         while True:
             curr_wp = drone.get_mission_status()
             logger.info(f"Current waypoint: {curr_wp}")
 
             if curr_wp == start_wp and not pipeline_started:
                 pipeline_started = True
-                logger.info(
-                    f"Reached waypoint {curr_wp}, starting detection pipeline "
-                    f"on {cfg.mav.device2}"
-                )
+                pipeline.prepare(is_bottle=cfg.mission.is_bottle, start_camera=False)
+                logger.info(f"Reached wp {curr_wp}, starting detection (single UART, main thread)")
 
-                pipeline_thread = threading.Thread(
-                    target=run_led_detection_pipeline,
-                    kwargs={
-                        "stop_event": stop_event,
-                        "is_bottle": is_bottle,
-                        "fps": fps,
-                        "device": cfg.mav.device2,
-                        "baud": cfg.mav.baud,
-                        "result_queue": results_queue,
-                    },
-                    daemon=True,
-                )
-                pipeline_thread.start()
+            if pipeline_started and curr_wp < stop_wp:
+                loop_start = time.monotonic()
+                pipeline.process_one_frame(is_bottle=cfg.mission.is_bottle)
+                elapsed = time.monotonic() - loop_start
+                remaining = interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+                continue
 
             if pipeline_started and curr_wp >= stop_wp:
-                logger.info(f"Reached waypoint {curr_wp}, stopping detection pipeline")
-                stop_event.set()
+                logger.info(f"Reached wp {curr_wp}, stopping detection")
+                targets = list(mission.TRG_CANDIDATES)
                 break
 
             time.sleep(0.2)
 
-        if pipeline_thread is not None:
-            pipeline_thread.join(timeout=15)
-            if not results_queue.empty():
-                targets = results_queue.get()
-
         log_targets(logger, targets)
 
     finally:
+        camera.stop()
         drone.close()
 
 

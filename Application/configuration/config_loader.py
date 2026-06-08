@@ -46,10 +46,34 @@ class DirsConfig:
     videos_dir: Path
     photos_dir: Path
     zones_dir: Path
+    targets_file: Path
 
 @dataclass(frozen=True)
 class ZonesPaths:
     search_zone_path: str # W Twoim TOML to ścieżka do pliku .poly
+
+@dataclass(frozen=True)
+class LoiterConfig:
+    time: float
+    alt: float
+    radius: float
+
+@dataclass(frozen=True)
+class OokConfig:
+    duration_s: float
+    candidates: tuple[float, ...]
+    min_confidence: float
+    roi_size: int
+    brightness_threshold: int
+
+@dataclass(frozen=True)
+class MissionConfig:
+    start_wp: int
+    stop_wp: int
+    is_bottle: bool
+    loiter: LoiterConfig
+    ook: OokConfig
+
 
 class Config:
     def __init__(self, file_name: str = "config.toml"):
@@ -120,7 +144,8 @@ class Config:
                 logs_dir=self.ROOT_DIR / dirs["logs_dir"],
                 videos_dir=self.ROOT_DIR / dirs["videos_dir"],
                 photos_dir=self.ROOT_DIR / dirs["photos_dir"],
-                zones_dir=self.ROOT_DIR / dirs["zones_dir"]
+                zones_dir=self.ROOT_DIR / dirs["zones_dir"],
+                targets_file=self.ROOT_DIR / dirs["targets_file"]
             )
 
             # Init folderów
@@ -128,6 +153,27 @@ class Config:
                 d.mkdir(parents=True, exist_ok=True)
 
             self.zones = ZonesPaths(search_zone_path=data["zones"]["search_zone_path"])
+
+            mission = data["mission"]
+            loiter = mission["loiter"]
+            ook = mission["ook"]
+            self.mission = MissionConfig(
+                start_wp=mission["start_wp"],
+                stop_wp=mission["stop_wp"],
+                is_bottle=mission["is_bottle"],
+                loiter=LoiterConfig(
+                    time=loiter["time"],
+                    alt=loiter["alt"],
+                    radius=loiter["radius"],
+                ),
+                ook=OokConfig(
+                    duration_s=ook["duration_s"],
+                    candidates=tuple(ook["candidates"]),
+                    min_confidence=ook["min_confidence"],
+                    roi_size=ook["roi_size"],
+                    brightness_threshold=ook["brightness_threshold"],
+                ),
+            )
 
         except KeyError as e:
             raise KeyError(f"BŁĄD KONFIGURACJI: Brak klucza {e}")
