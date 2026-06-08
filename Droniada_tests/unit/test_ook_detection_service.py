@@ -32,6 +32,7 @@ class TestOokDetectionService(unittest.TestCase):
         ook_cfg = OokConfig(
             duration_s=0.01,
             candidates=(5.0, 7.0),
+            desired=(5.0, 7.0),
             min_confidence=4.0,
             roi_size=20,
             brightness_threshold=220,

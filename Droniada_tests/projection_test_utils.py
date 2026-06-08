@@ -124,6 +124,7 @@ def project_via_process_one_frame(
     """
     frame = np.zeros((pipeline.camera.HEIGHT, pipeline.camera.WIDTH), dtype=np.uint8)
     pipeline.camera.get_image.return_value = (frame, 0.0, None)
+    pipeline.mission.GEOFENCE = geofence
 
     captured: dict = {}
 
@@ -142,6 +143,65 @@ def project_via_process_one_frame(
                     pipeline.process_one_frame(is_bottle=is_bottle)
 
     return captured.get("lat"), captured.get("lon")
+
+
+def project_center_via_process_one_frame(
+    pipeline: DetectionPipelineService,
+    geofence: List[Tuple[float, float]],
+    is_bottle: bool = True,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Projekcja środka kadru kamery."""
+    return project_via_process_one_frame(
+        pipeline,
+        WIDTH // 2,
+        HEIGHT // 2,
+        geofence,
+        is_bottle=is_bottle,
+    )
+
+
+def sweep_center_pixel_vs_attitude(
+    lat: float,
+    lon: float,
+    alt: float,
+    geofence: List[Tuple[float, float]],
+    *,
+    base_roll_deg: float = 0.0,
+    base_pitch_deg: float = 0.0,
+    base_yaw_deg: float = 0.0,
+    axis: str,
+    values_deg: List[float],
+    is_bottle: bool = True,
+) -> List[Tuple[float, Optional[float], Optional[float]]]:
+    """
+    Dla każdej wartości kąta (roll/pitch/yaw) zwraca (kąt, east_m, north_m)
+    projekcji środka kadru względem pozycji drona.
+    """
+    results: List[Tuple[float, Optional[float], Optional[float]]] = []
+    for angle_deg in values_deg:
+        roll = base_roll_deg
+        pitch = base_pitch_deg
+        yaw = base_yaw_deg
+        if axis == "roll":
+            roll = angle_deg
+        elif axis == "pitch":
+            pitch = angle_deg
+        elif axis == "yaw":
+            yaw = angle_deg
+        else:
+            raise ValueError(f"Unknown axis: {axis}")
+
+        drone = make_mock_drone(lat, lon, alt, roll, pitch, yaw)
+        pipeline = make_detection_pipeline(drone)
+        lat_p, lon_p = project_center_via_process_one_frame(
+            pipeline, geofence, is_bottle=is_bottle
+        )
+        if lat_p is None or lon_p is None:
+            results.append((angle_deg, None, None))
+        else:
+            east, north = latlon_to_meters(lat_p, lon_p, lat, lon)
+            results.append((angle_deg, east, north))
+    return results
 
 
 def project_grid_via_process_one_frame(
@@ -170,3 +230,55 @@ def project_grid_via_process_one_frame(
             )
         )
     return points
+
+if __name__ == "__main__":
+    print("--- ROZPOCZYNAMY TESTY PROJEKCJI ---")
+    
+    # 1. Ustawiamy testowe współrzędne drona (np. okolice Rynku w Krakowie) i wysokość
+    test_lat = 50.06143
+    test_lon = 19.93658
+    test_alt = 50.0  # dron wisi 50 metrów nad ziemią
+    
+    # 2. Tworzymy strefę geofence, żeby system nie odrzucał wyników jako "poza mapą"
+    gf = huge_geofence(test_lat, test_lon)
+    
+    # =========================================================
+    # TEST 1: Dron wisi idealnie poziomo, patrzymy w środek kamery
+    # =========================================================
+    print("\n[TEST 1] Środek kamery (Dron w poziomie: roll=0, pitch=0, yaw=0)")
+    
+    # Tworzymy naszego sztucznego drona i podpinamy go do potoku
+    drone = make_mock_drone(test_lat, test_lon, test_alt)
+    pipeline = make_detection_pipeline(drone)
+    
+    # Odpalamy projekcję dla środka kadru
+    lat_p, lon_p = project_center_via_process_one_frame(pipeline, gf)
+    
+    print(f"Pozycja drona:  lat = {test_lat}, lon = {test_lon}")
+    if lat_p is not None and lon_p is not None:
+        print(f"Pozycja obiektu: lat = {lat_p:.5f}, lon = {lon_p:.5f}")
+        # Przeliczamy na metry, żeby łatwiej było nam ocenić czy wynik ma sens
+        east, north = latlon_to_meters(lat_p, lon_p, test_lat, test_lon)
+        print(f"-> Obiekt znajduje się: {east:.2f}m na Wschód i {north:.2f}m na Północ od drona.")
+    else:
+        print("-> BŁĄD: System nie zwrócił żadnych współrzędnych!")
+
+    # =========================================================
+    # TEST 2: Testowanie pochylenia drona (Pitch)
+    # =========================================================
+    print("\n[TEST 2] Zmiana pochylenia drona (Pitch od -15 do +15 stopni)")
+    
+    # Wywołujemy gotowe narzędzie z Twojego kodu
+    angles = [-15.0, -5.0, 0.0, 5.0, 15.0]
+    results = sweep_center_pixel_vs_attitude(
+        lat=test_lat, lon=test_lon, alt=test_alt, geofence=gf,
+        axis="pitch", values_deg=angles
+    )
+    
+    for angle, east, north in results:
+        if east is not None and north is not None:
+            print(f"Kąt pitch = {angle:5.1f}° -> Przesunięcie na ziemi: Wschód: {east:6.2f}m, Północ: {north:6.2f}m")
+        else:
+            print(f"Kąt pitch = {angle:5.1f}° -> Brak detekcji")
+            
+    print("\n--- KONIEC TESTÓW ---")
