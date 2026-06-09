@@ -6,7 +6,7 @@ import numpy as np
 # z tych zmiennych korzysta klasa DistortionCalibrator
 
 # LICZBA STYKÓW KWADRATÓW W SZEROKOŚCI X WYSOKOŚCI
-CHECKERBOARD = (19, 14)
+CHECKERBOARD = (9, 6)
 
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
