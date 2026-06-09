@@ -88,11 +88,9 @@ class DroniadaMissionOrchestrator:
         self,
         ordered_targets: List[Dict[str, Any]],
         loiter_start_wp: int,
-    ) -> Tuple[List[Dict[str, Any]], List[Tuple[float, float]]]:
-    
+    ) -> List[Dict[str, Any]]:
         ook_service = OokDetectionService(self.camera)
         ook_results: List[Dict[str, Any]] = []
-        landing_sites: List[Tuple[float, float]] = []
 
         loiter_count = len(ordered_targets)
         loiter_end_wp = loiter_start_wp + loiter_count
@@ -120,10 +118,9 @@ class DroniadaMissionOrchestrator:
                     ook_result.get("freq") is not None
                     and ook_result.get("confidence", 0) >= self.mission_cfg.ook.min_confidence
                 ):
-                    landing_sites.append((target["lat"], target["lon"]))
                     self.logger.info(
                         f"OOK confirmed at ({target['lat']:.6f}, {target['lon']:.6f}): "
-                        f"{ook_result['freq']}Hz"
+                        f"{ook_result['freq']}Hz, confidence={ook_result['confidence']:.2f}"
                     )
                 else:
                     self.logger.warning(
@@ -137,7 +134,7 @@ class DroniadaMissionOrchestrator:
 
             time.sleep(0.2)
 
-        return ook_results, landing_sites
+        return ook_results
 
     def run(self) -> dict:
         #self.drone.set_mission_current_rate(10)
@@ -183,18 +180,29 @@ class DroniadaMissionOrchestrator:
             else:
                 self.logger.info(f"[dry-run] Would append {len(loiter_wps)} LOITER waypoints")
 
-            ook_results, landing_sites = self._run_loiter_and_ook_phase(
-                ordered, loiter_start_wp
+            ook_results = self._run_loiter_and_ook_phase(ordered, loiter_start_wp)
+
+            landing_sites = self.planner.select_desired_landing_sites(
+                ordered,
+                ook_results,
+                self.mission_cfg.ook.desired,
+                self.mission_cfg.ook.min_confidence,
             )
 
             if landing_sites and not self.dry_run:
                 self.drone.send_landing_sites(landing_sites)
             elif landing_sites:
                 self.logger.info(f"[dry-run] Would send {len(landing_sites)} landing sites")
+            elif self.mission_cfg.ook.desired:
+                self.logger.warning(
+                    "No landing sites matched desired frequencies "
+                    f"{list(self.mission_cfg.ook.desired)}"
+                )
 
             result = {
                 "targets": ordered,
                 "ook_results": ook_results,
+                "desired_frequencies": list(self.mission_cfg.ook.desired),
                 "landing_sites": [{"lat": lat, "lon": lon} for lat, lon in landing_sites],
             }
             self._save_results(result)

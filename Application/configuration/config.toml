@@ -31,14 +31,14 @@ resolution = [
 ]
 K = [
     [
-        346.2295,
+        346.22956795,
         0.0,
-        317.76,
+        317.53913984,
     ],
     [
         0.0,
-        346.2628,
-        197.64,
+        346.26282973,
+        197.63094539,
     ],
     [
         0.0,
@@ -65,17 +65,17 @@ targets_file = "media/droniada_targets.json"
 debug_mode = false
 
 [zones]
-search_zone_path = "sloszowa_droniada_T.poly"
+search_zone_path = "gorka_t.poly"
 
 [mission]
-start_wp = 3
-stop_wp = 6
+start_wp = 2
+stop_wp = 3
 is_bottle = true
 
 [mission.loiter]
 time = 15
-alt = 60
-radius = 50
+alt = 50
+radius = 5
 
 [mission.ook]
 duration_s = 10
@@ -90,7 +90,9 @@ candidates = [
     16,
     18,
     20,
+    23,
     25,
+    27,
     90,
     94,
     96,
@@ -100,3 +102,9 @@ candidates = [
 min_confidence = 4.0
 roi_size = 40
 brightness_threshold = 220
+desired = [
+    4,
+    8,
+    10,
+    12,
+]

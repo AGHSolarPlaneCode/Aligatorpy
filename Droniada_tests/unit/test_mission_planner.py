@@ -45,6 +45,57 @@ class TestMissionPlannerService(unittest.TestCase):
         self.assertEqual(len(sites), 1)
         self.assertEqual(sites[0], (50.0, 19.0))
 
+    def test_select_desired_landing_sites_picks_by_freq_and_confidence(self):
+        targets = [
+            {"lat": 50.0, "lon": 19.0},
+            {"lat": 50.1, "lon": 19.1},
+            {"lat": 50.2, "lon": 19.2},
+            {"lat": 50.3, "lon": 19.3},
+        ]
+        ook_results = [
+            {"freq": 4.0, "confidence": 5.0},
+            {"freq": 8.0, "confidence": 6.0},
+            {"freq": 10.0, "confidence": 4.5},
+            {"freq": 12.0, "confidence": 7.0},
+        ]
+        sites = self.planner.select_desired_landing_sites(
+            targets, ook_results, desired=(4.0, 8.0, 10.0, 12.0), min_confidence=4.0
+        )
+        self.assertEqual(
+            sites,
+            [(50.0, 19.0), (50.1, 19.1), (50.2, 19.2), (50.3, 19.3)],
+        )
+
+    def test_select_desired_landing_sites_duplicate_freq_picks_top_two(self):
+        targets = [
+            {"lat": 50.0, "lon": 19.0},
+            {"lat": 50.1, "lon": 19.1},
+            {"lat": 50.2, "lon": 19.2},
+        ]
+        ook_results = [
+            {"freq": 4.0, "confidence": 5.0},
+            {"freq": 4.0, "confidence": 8.0},
+            {"freq": 4.0, "confidence": 6.0},
+        ]
+        sites = self.planner.select_desired_landing_sites(
+            targets, ook_results, desired=(4.0, 4.0), min_confidence=4.0
+        )
+        self.assertEqual(sites, [(50.1, 19.1), (50.2, 19.2)])
+
+    def test_select_desired_landing_sites_skips_missing_freq(self):
+        targets = [
+            {"lat": 50.0, "lon": 19.0},
+            {"lat": 50.1, "lon": 19.1},
+        ]
+        ook_results = [
+            {"freq": 4.0, "confidence": 5.0},
+            {"freq": None, "confidence": 0.0},
+        ]
+        sites = self.planner.select_desired_landing_sites(
+            targets, ook_results, desired=(4.0, 8.0), min_confidence=4.0
+        )
+        self.assertEqual(sites, [(50.0, 19.0)])
+
 
 if __name__ == "__main__":
     unittest.main()

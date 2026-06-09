@@ -61,11 +61,76 @@ class MissionPlannerService:
         return waypoints
 
     @staticmethod
+    def _freq_matches(detected: float, desired: float, tolerance: float = 0.01) -> bool:
+        return abs(float(detected) - float(desired)) <= tolerance
+
+    def select_desired_landing_sites(
+        self,
+        ordered_targets: List[Dict[str, Any]],
+        ook_results: List[Dict[str, Any]],
+        desired: tuple[float, ...],
+        min_confidence: float,
+    ) -> List[Tuple[float, float]]:
+        """
+        Wybiera lądowiska do wysłania na samolot — po jednym (lub więcej przy
+        powtórzonej częstotliwości w desired) na każdy wpis z listy desired.
+
+        Dla każdej częstotliwości z desired bierze nieużyte jeszcze obserwacje
+        OOK o pasującym freq i najwyższym confidence (>= min_confidence).
+        """
+        observations: List[Dict[str, Any]] = []
+        for target, ook in zip(ordered_targets, ook_results):
+            freq = ook.get("freq")
+            confidence = ook.get("confidence", 0)
+            if freq is None or confidence < min_confidence:
+                continue
+            observations.append(
+                {
+                    "lat": target["lat"],
+                    "lon": target["lon"],
+                    "freq": float(freq),
+                    "confidence": float(confidence),
+                }
+            )
+
+        used: set[int] = set()
+        selected: List[Tuple[float, float]] = []
+
+        for desired_freq in desired:
+            matches = [
+                (idx, obs)
+                for idx, obs in enumerate(observations)
+                if idx not in used and self._freq_matches(obs["freq"], desired_freq)
+            ]
+            if not matches:
+                self.logger.warning(
+                    f"No OOK match for desired landing freq {desired_freq}Hz "
+                    f"(min_confidence={min_confidence})"
+                )
+                continue
+
+            matches.sort(key=lambda item: item[1]["confidence"], reverse=True)
+            best_idx, best = matches[0]
+            used.add(best_idx)
+            selected.append((best["lat"], best["lon"]))
+            self.logger.info(
+                f"Selected landing site for desired {desired_freq}Hz: "
+                f"({best['lat']:.6f}, {best['lon']:.6f}), "
+                f"detected={best['freq']}Hz, confidence={best['confidence']:.2f}"
+            )
+
+        self.logger.info(
+            f"Selected {len(selected)}/{len(desired)} desired landing site(s)"
+        )
+        return selected
+
+    @staticmethod
     def build_landing_sites(
         ordered_targets: List[Dict[str, Any]],
         ook_results: List[Dict[str, Any]],
         min_confidence: float,
     ) -> List[Tuple[float, float]]:
+        """Wszystkie potwierdzone OOK (bez filtrowania po desired)."""
         sites = []
         for target, ook in zip(ordered_targets, ook_results):
             if ook.get("freq") is not None and ook.get("confidence", 0) >= min_confidence:

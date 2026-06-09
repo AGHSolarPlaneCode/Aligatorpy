@@ -62,6 +62,7 @@ class LoiterConfig:
 class OokConfig:
     duration_s: float
     candidates: tuple[float, ...]
+    desired: tuple[float, ...]
     min_confidence: float
     roi_size: int
     brightness_threshold: int
@@ -169,6 +170,7 @@ class Config:
                 ook=OokConfig(
                     duration_s=ook["duration_s"],
                     candidates=tuple(ook["candidates"]),
+                    desired=tuple(ook["desired"]),
                     min_confidence=ook["min_confidence"],
                     roi_size=ook["roi_size"],
                     brightness_threshold=ook["brightness_threshold"],
