@@ -10,9 +10,12 @@ Użycie:
 import argparse
 import sys
 import time
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from pymavlink import mavutil
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
+
 
 landing_sites = []
 collecting = False

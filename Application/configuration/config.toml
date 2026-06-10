@@ -15,11 +15,11 @@ mass = 165
 cd = 1
 drop_course = 10
 x_translation = -45.62005614816896
-y_translation = 10.394985962957753
+y_translation = 10.394985962957751
 
 [drops.bottle]
 mass = 200
-cd = 1
+cd = 0.47
 drop_course = 10
 x_translation = -40.852570470817724
 y_translation = 12.786857382295567
