@@ -374,6 +374,27 @@ class MissionService:
         }    
 
 
+
+    def process_landing_sites(self, sites: list[tuple[float, float]]):
+        """
+        Przyjmuje listę lądowisk od drona i wysyła waypoints zrzutu do autopilota. Do przemyślenia logika jak to chcemy robić,
+        na razie testuję czy wgl cały pipeline działa
+        Args:
+            sites: lista tupli (lat, lon)
+        """
+        container = []
+        yaw = self.drone.get_attitude()[2] 
+
+        for lat, lon in sites:
+            drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": False})
+            self.calc_drop_waypoints(drop_point, yaw, container)
+
+        self.drone.append_waypoints(container)
+        print(f"[MissionService] Wysłano {len(container)} waypointów zrzutu")
+
+
+
+
 if __name__ == "__main__":
     a=1
     mission = MissionService(a, (1280, 720))
