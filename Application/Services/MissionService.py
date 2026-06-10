@@ -433,7 +433,7 @@ class MissionService:
     
 
     def generate_loiter_waypoints(self, points, existing_distance, min_distance_km=8.5):
-        import math
+   
 
         def gps_distance(lat1, lon1, lat2, lon2):
             R = 6371000
@@ -444,28 +444,34 @@ class MissionService:
             a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
             return 2*R*math.asin(math.sqrt(a))
 
-        total_one_lap = 0
-        for i in range(len(points)):
-            a = points[i]
-            b = points[(i + 1) % len(points)]
-            total_one_lap += gps_distance(a[0], a[1], b[0], b[1])
-
-        remaining = min_distance_km * 1000 - existing_distance
-        laps_needed = max(1, math.ceil(remaining / total_one_lap))
-        print("Potrzebnych okrążeń: ", laps_needed)
+        target = min_distance_km * 1000
+        self.logger.info(f"generate_loiter_waypoints: dystans zrzutów = {existing_distance:.1f}m, cel = {target:.1f}m")
 
         container = []
-        for _ in range(laps_needed):
-            for lat, lon in points:
-                container.append({
-                    "command": "WAYPOINT",
-                    "lat": lat,
-                    "lon": lon,
-                    "alt": cfg.drops.altitude,
-                    "acr": 15
-                })
-        return container
+        cumulative = existing_distance
 
+        last_point = None
+        idx = 0
+        while cumulative < target:
+            lat, lon = points[idx % len(points)]
+            if last_point is not None:
+                d = gps_distance(last_point[0], last_point[1], lat, lon)
+                cumulative += d
+                self.logger.info(f"  + punkt {idx % len(points)}: {lat},{lon} (+{d:.1f}m, suma={cumulative:.1f}m)")
+            else:
+                self.logger.info(f"  start: {lat},{lon}")
+            container.append({
+                "command": "WAYPOINT",
+                "lat": lat,
+                "lon": lon,
+                "alt": cfg.drops.altitude,
+                "acr": 15
+            })
+            last_point = (lat, lon)
+            idx += 1
+
+        self.logger.info(f"generate_loiter_waypoints: dodano {len(container)} waypointów, łączny dystans = {cumulative:.1f}m")
+        return container
 
     def calc_route_distance(self, container):
         import math
