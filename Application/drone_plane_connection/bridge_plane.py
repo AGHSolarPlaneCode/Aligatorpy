@@ -29,7 +29,15 @@ def handle_landing(mission):
         print("[LANDING] Brak lądowisk")
         return
 
+
     try:
+         # Zapisz lądowiska do pliku
+        with open("landing_sites.txt", "a") as f:
+            import datetime
+            f.write(f"\n--- {datetime.datetime.now()} ---\n")
+            for lat, lon in landing_sites:
+                f.write(f"{lat},{lon}\n")
+        print("[LANDING] Zapisano lądowiska do landing_sites.txt")
         mission.process_landing_sites(landing_sites)
         print("[LANDING] Gotowe")
     except Exception as e:
