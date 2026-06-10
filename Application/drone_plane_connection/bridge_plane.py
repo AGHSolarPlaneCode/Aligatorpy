@@ -17,6 +17,30 @@ from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
 
 
+
+zone_points = [
+    (50.272217, 18.670302),
+    (50.271481, 18.665653),
+    (50.268558, 18.665451),
+    (50.267404, 18.669445),
+    (50.267695, 18.67982),
+    (50.267561, 18.689233),
+    (50.266878, 18.700921),
+    (50.271334, 18.701793),
+    (50.271067, 18.687992),
+    (50.270752, 18.676794),
+]
+
+loiter_points = [
+    (50.2683316, 18.6695051),
+    (50.2707181, 18.6691618),
+    (50.270752, 18.676794),
+    (50.2685510, 18.6979151),
+    (50.2697031,18.6978722),
+    (50.2683316, 18.6695051)
+]
+
+
 landing_sites = []
 collecting = False
 
@@ -41,7 +65,7 @@ def handle_landing(mission):
             for lat, lon in landing_sites:
                 f.write(f"{lat},{lon}\n")
         print("[LANDING] Zapisano lądowiska do landing_sites.txt")
-        mission.process_landing_sites(landing_sites)
+        mission.process_landing_sites(landing_sites, loiter_points)
         print("[LANDING] Gotowe")
     except Exception as e:
         print(f"[LANDING] Błąd: {type(e).__name__}: {e}")

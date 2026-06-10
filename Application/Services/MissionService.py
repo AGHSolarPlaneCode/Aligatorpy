@@ -375,7 +375,7 @@ class MissionService:
 
 
 
-    def process_landing_sites(self, sites: list[tuple[float, float]]) -> bool:
+    def process_landing_sites(self, sites: list[tuple[float, float]], loiter_points: list[tuple[float, float]] = None) -> bool:
         if not sites:
             self.logger.warning("process_landing_sites: empty sites list")
             return False
@@ -387,7 +387,6 @@ class MissionService:
 
         yaw = attitude[2]
 
-        # Dziel na pary
         pairs = []
         for i in range(0, len(sites), 2):
             pair = sites[i:i+2]
@@ -400,6 +399,12 @@ class MissionService:
             is_bottle = (i == 1)
             drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
             self.calc_drop_waypoints(drop_point, yaw, container)
+
+        if loiter_points:
+            existing_dist = self.calc_route_distance(container)
+            print("Zrzuty dystans:", existing_dist, "Pozostało do 8km:", 8000 - existing_dist)
+            container.extend(self.generate_loiter_waypoints(loiter_points, existing_dist))
+
         container.append({"command": "RTL"})
         ok = self.drone.set_waypoints(container)
         self.logger.info(f"process_landing_sites: sent first mission ({len(container)} items), ok={ok}")
@@ -411,6 +416,13 @@ class MissionService:
                 is_bottle = (i == 1)
                 drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
                 self.calc_drop_waypoints(drop_point, yaw, container)
+
+            if loiter_points:
+                existing_dist = self.calc_route_distance(container)
+                print("Zrzuty dystans:", existing_dist, "Pozostało do 8km:", 8000 - existing_dist)
+
+                container.extend(self.generate_loiter_waypoints(loiter_points, existing_dist))
+
             container.append({"command": "RTL"})
 
             filename = f"mission_{mission_idx}.waypoints"
@@ -418,6 +430,61 @@ class MissionService:
             self.logger.info(f"Saved mission {mission_idx} to {filename}")
 
         return ok
+    
+
+    def generate_loiter_waypoints(self, points, existing_distance, min_distance_km=8.5):
+        import math
+
+        def gps_distance(lat1, lon1, lat2, lon2):
+            R = 6371000
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+            return 2*R*math.asin(math.sqrt(a))
+
+        total_one_lap = 0
+        for i in range(len(points)):
+            a = points[i]
+            b = points[(i + 1) % len(points)]
+            total_one_lap += gps_distance(a[0], a[1], b[0], b[1])
+
+        remaining = min_distance_km * 1000 - existing_distance
+        laps_needed = max(1, math.ceil(remaining / total_one_lap))
+        print("Potrzebnych okrążeń: ", laps_needed)
+
+        container = []
+        for _ in range(laps_needed):
+            for lat, lon in points:
+                container.append({
+                    "command": "WAYPOINT",
+                    "lat": lat,
+                    "lon": lon,
+                    "alt": cfg.drops.altitude,
+                    "acr": 15
+                })
+        return container
+
+
+    def calc_route_distance(self, container):
+        import math
+
+        def gps_distance(lat1, lon1, lat2, lon2):
+            R = 6371000
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+            return 2*R*math.asin(math.sqrt(a))
+
+        total = 0
+        waypoints = [wp for wp in container if "lat" in wp]
+        for i in range(len(waypoints) - 1):
+            a, b = waypoints[i], waypoints[i+1]
+            total += gps_distance(a["lat"], a["lon"], b["lat"], b["lon"])
+        return total
 
     def _save_waypoints_file(self, waypoints: list, filename: str):
         """Zapisuje waypoints do pliku .waypoints kompatybilnego z MP"""
