@@ -193,7 +193,7 @@ class MatekService:
             "param5": 0, "param6": 0, "param7": 0}
 
         
-        command_map = {"WAYPOINT": 16, "SET_SERVO": 183, "TAKEOFF": 22}  # Map custom command names to MAVLink command IDs
+        command_map = {"WAYPOINT": 16, "SET_SERVO": 183, "TAKEOFF": 22, "RTL": 20}  # Map custom command names to MAVLink command IDs
 
         all_waypoints = [home] + waypoints
         
@@ -286,6 +286,18 @@ class MatekService:
                         0, 0, 0, 0,
                         0, 0,
                         wp["alt"]
+                    )
+
+                elif cmd == 20:  # RTL
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_MISSION,
+                        mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                        is_current,
+                        1,
+                        0, 0, 0, 0, 0, 0, 0
                     )
                 # jeśli planujemy ręcznie dodawać inne typy komend do misji, należy je zdefiniować tutaj ręcznie
             

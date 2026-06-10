@@ -375,22 +375,71 @@ class MissionService:
 
 
 
-    def process_landing_sites(self, sites: list[tuple[float, float]]):
-        """
-        Przyjmuje listę lądowisk od drona i wysyła waypoints zrzutu do autopilota. Do przemyślenia logika jak to chcemy robić,
-        na razie testuję czy wgl cały pipeline działa
-        Args:
-            sites: lista tupli (lat, lon)
-        """
+    def process_landing_sites(self, sites: list[tuple[float, float]]) -> bool:
+        if not sites:
+            self.logger.warning("process_landing_sites: empty sites list")
+            return False
+
+        attitude = self.drone.get_attitude()
+        if attitude is None:
+            self.logger.error("process_landing_sites: no attitude data")
+            return False
+
+        yaw = attitude[2]
+
+        # Dziel na pary
+        pairs = []
+        for i in range(0, len(sites), 2):
+            pair = sites[i:i+2]
+            pairs.append(pair)
+
+        # Pierwsza para -> wyślij od razu
+        first_pair = pairs[0]
         container = []
-        yaw = self.drone.get_attitude()[2] 
-
-        for lat, lon in sites:
-            drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": False})
+        for i, (lat, lon) in enumerate(first_pair):
+            is_bottle = (i == 1)
+            drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
             self.calc_drop_waypoints(drop_point, yaw, container)
+        container.append({"command": "RTL"})
+        ok = self.drone.set_waypoints(container)
+        self.logger.info(f"process_landing_sites: sent first mission ({len(container)} items), ok={ok}")
 
-        self.drone.append_waypoints(container)
-        print(f"[MissionService] Wysłano {len(container)} waypointów zrzutu")
+        # Kolejne pary -> zapisz do plików
+        for mission_idx, pair in enumerate(pairs[1:], start=2):
+            container = []
+            for i, (lat, lon) in enumerate(pair):
+                is_bottle = (i == 1)
+                drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
+                self.calc_drop_waypoints(drop_point, yaw, container)
+            container.append({"command": "RTL"})
+
+            filename = f"mission_{mission_idx}.waypoints"
+            self._save_waypoints_file(container, filename)
+            self.logger.info(f"Saved mission {mission_idx} to {filename}")
+
+        return ok
+
+    def _save_waypoints_file(self, waypoints: list, filename: str):
+        """Zapisuje waypoints do pliku .waypoints kompatybilnego z MP"""
+        lines = ["QGC WPL 110"]
+        # Dodaj punkt HOME
+        lines.append("0\t1\t0\t16\t0\t0\t0\t0\t0\t0\t0\t1")
+
+        cmd_map = {"WAYPOINT": 16, "SET_SERVO": 183, "TAKEOFF": 22, "RTL": 20}
+
+        for i, wp in enumerate(waypoints, start=1):
+            cmd = cmd_map.get(wp["command"], 16)
+            if wp["command"] == "WAYPOINT":
+                lines.append(f"{i}\t0\t3\t{cmd}\t0\t{wp['acr']}\t0\t0\t{wp['lat']}\t{wp['lon']}\t{wp['alt']}\t1")
+            elif wp["command"] == "SET_SERVO":
+                lines.append(f"{i}\t0\t2\t{cmd}\t{wp['channel']}\t{wp['pwm']}\t0\t0\t0\t0\t0\t1")
+            elif wp["command"] == "RTL":
+                lines.append(f"{i}\t0\t2\t{cmd}\t0\t0\t0\t0\t0\t0\t0\t1")
+
+        with open(filename, "w") as f:
+            f.write("\n".join(lines))
+
+        print(f"[Mission] Zapisano misję do {filename}")
 
 
 
