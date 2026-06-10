@@ -65,11 +65,11 @@ def handle_landing(mission):
             f.write(f"\n--- {datetime.datetime.now()} ---\n")
             for lat, lon in landing_sites:
                 f.write(f"{lat},{lon}\n")
-        print("[LANDING] Zapisano lądowiska do landing_sites.txt")
+        logger.info("[LANDING] Zapisano lądowiska do landing_sites.txt")
         mission.process_landing_sites(landing_sites, loiter_points)
-        print("[LANDING] Gotowe")
+        logger.info("[LANDING] Gotowe")
     except Exception as e:
-        print(f"[LANDING] Błąd: {type(e).__name__}: {e}")
+        logger.info(f"[LANDING] Błąd: {type(e).__name__}: {e}")
 
 def main():
     global landing_sites, collecting
@@ -77,22 +77,22 @@ def main():
 
     while True:
         try:
-            print(f"[MAVLink] Łączę się z autopilotem: {args.plane_device}...")
+            logger.info(f"[MAVLink] Łączę się z autopilotem: {args.plane_device}...")
             plane = MatekService(device=args.plane_device, baud=args.plane_baud)
             mission = MissionService(plane)
-            print("[MAVLink] Połączono z autopilotem")
+            logger.info("[MAVLink] Połączono z autopilotem")
             break
         except Exception as e:
-            print(f"[MAVLink] Błąd: {type(e).__name__}: {e}, retry za 3s...")
+            logger.info(f"[MAVLink] Błąd: {type(e).__name__}: {e}, retry za 3s...")
             time.sleep(3)
 
-    print(f"[Bridge] Nasłuchuję na porcie {args.listen_port}...")
+    logger.info(f"[Bridge] Nasłuchuję na porcie {args.listen_port}...")
     mav = mavutil.mavlink_connection(
         f"tcpin:0.0.0.0:{args.listen_port}",
         source_system=255
     )
 
-    print("[Bridge] TCP podłączony / czekam na wiadomości MAVLink...")
+    logger.info("[Bridge] TCP podłączony / czekam na wiadomości MAVLink...")
 
     try:
         while True:
@@ -114,18 +114,18 @@ def main():
             if text == "LANDING_START":
                 landing_sites = []
                 collecting = True
-                print("[LANDING] Start zbierania lądowisk")
+                logger.info("[LANDING] Start zbierania lądowisk")
             elif text.startswith("LANDING:") and collecting:
                 try:
                     _, coords = text.split(":", 1)
                     lat, lon = map(float, coords.split(",", 1))
                     landing_sites.append((lat, lon))
-                    print(f"[LANDING] Dodano: {lat}, {lon}")
+                    logger.info(f"[LANDING] Dodano: {lat}, {lon}")
                 except Exception as e:
-                    print(f"[LANDING] Błąd parsowania: {text} -> {type(e).__name__}: {e}")
+                    logger.info(f"[LANDING] Błąd parsowania: {text} -> {type(e).__name__}: {e}")
             elif text == "LANDING_END" and collecting:
                 collecting = False
-                print("[LANDING] Koniec zbierania lądowisk")
+                logger.info("[LANDING] Koniec zbierania lądowisk")
                 handle_landing(mission)
 
     except KeyboardInterrupt:
@@ -135,7 +135,7 @@ def main():
             mav.close()
         except Exception:
             pass
-        print("\n[Bridge] Zatrzymano.")
+        logger.info("\n[Bridge] Zatrzymano.")
         sys.exit(0)
 
 if __name__ == "__main__":
