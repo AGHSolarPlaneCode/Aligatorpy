@@ -52,6 +52,7 @@ distortion = [
     -0.11298309,
     0.05177157,
 ]
+fisheye = true
 
 [dirs]
 logs_dir = "media/logs"

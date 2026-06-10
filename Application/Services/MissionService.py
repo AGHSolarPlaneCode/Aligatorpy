@@ -24,6 +24,7 @@ class MissionService:
 
     K = cfg.camera.K
     dist = cfg.camera.distortion
+    fisheye = cfg.camera.fisheye
 
     
     def rot_matrix(self, roll, pitch, yaw):
@@ -58,11 +59,19 @@ class MissionService:
             return None
         
         # korekta dystorsji
-        undistorted = cv2.fisheye.undistortPoints(
-            np.array([[[u, v]]], dtype=np.float32),
+        if MissionService.fisheye:
+            undistorted = cv2.fisheye.undistortPoints(
+            np.array([[[float(u), float(v)]]], dtype=np.float64),
+            MissionService.K,
+            MissionService.dist
+        )
+        else:
+            undistorted = cv2.undistortPoints(
+            np.array([[u, v]], dtype=np.float32),
             cameraMatrix=MissionService.K,
             distCoeffs=MissionService.dist
         )
+
         x_u, y_u = undistorted[0,0]
         
         # promień w układzie kamery
