@@ -14,9 +14,25 @@ class LedDetector:
     MAX_AREA = 500
     MERGE_RADIUS = 25
 
-    def __init__(self, width: int, height: int):
+    # Przycięcie krawędzi (dystorsja fisheye) — tylko w analizie Python, nie w kamerze.
+    CROP_HORIZONTAL = 160  # px z lewej i prawej strony
+    CROP_VERTICAL = 75     # px z góry i dołu
+
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        crop_horizontal: int | None = None,
+        crop_vertical: int | None = None,
+    ):
         self.width = width
         self.height = height
+        self.crop_horizontal = (
+            self.CROP_HORIZONTAL if crop_horizontal is None else crop_horizontal
+        )
+        self.crop_vertical = (
+            self.CROP_VERTICAL if crop_vertical is None else crop_vertical
+        )
         self._detected_targets: list[dict] = []
         self._target_id_counter = 0
 
@@ -41,8 +57,17 @@ class LedDetector:
 
         return gray
 
+    def _crop_gray(self, gray: "np.ndarray") -> tuple["np.ndarray", int, int]:
+        """Obetnij zniekształcone brzegi; zwróć (obraz, offset_x, offset_y) w pełnej klatce."""
+        ch = self.crop_horizontal
+        cv = self.crop_vertical
+        if 2 * ch >= self.width or 2 * cv >= self.height:
+            return gray, 0, 0
+        return gray[cv : self.height - cv, ch : self.width - ch], ch, cv
+
     def process_frame(self, frame) -> list[dict]:
         gray = self._to_gray(frame)
+        gray, offset_x, offset_y = self._crop_gray(gray)
 
         _, thresh = cv2.threshold(gray, self.THRESHOLD_VALUE, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -53,8 +78,8 @@ class LedDetector:
             if self.MIN_AREA < area < self.MAX_AREA:
                 m = cv2.moments(cnt)
                 if m["m00"] != 0:
-                    cx = int(m["m10"] / m["m00"])
-                    cy = int(m["m01"] / m["m00"])
+                    cx = int(m["m10"] / m["m00"]) + offset_x
+                    cy = int(m["m01"] / m["m00"]) + offset_y
                     current_frame_centroids.append((cx, cy))
 
         for target in self._detected_targets:

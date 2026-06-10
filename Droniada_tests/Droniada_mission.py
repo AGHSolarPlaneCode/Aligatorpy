@@ -31,7 +31,7 @@ class DroniadaMissionOrchestrator:
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
         #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
-        self.drone = MatekService(device="tcp:192.168.0.186:5763")
+        self.drone = MatekService(device="tcp:192.168.173.52:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
         self.camera = camera or CameraPipeline()
