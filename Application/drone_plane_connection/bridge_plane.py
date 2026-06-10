@@ -13,10 +13,11 @@ import time
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from pymavlink import mavutil
+from Application.Logger.log_module import get_logger
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
 
-
+logger = get_logger(__name__)
 
 zone_points = [
     (50.272217, 18.670302),
@@ -101,14 +102,14 @@ def main():
                 continue
 
             if msg.get_type() == 'HEARTBEAT':
-                print(f"[HEARTBEAT] mode: {msg.custom_mode}")
+                logger.info(f"[HEARTBEAT] mode: {msg.custom_mode}")
                 continue
 
             if msg.get_type() != 'STATUSTEXT':
                 continue
 
             text = msg.text.strip()
-            print(f"[STATUSTEXT] '{text}' (len={len(text)})")
+            logger.info(f"[STATUSTEXT] '{text}' (len={len(text)})")
 
             if text == "LANDING_START":
                 landing_sites = []
