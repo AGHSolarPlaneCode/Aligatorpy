@@ -89,11 +89,24 @@ class MatekService:
 
         :return: Tuple of (latitude, longitude, altitude) or None if no GPS data
         """
+        position_data = self.get_current_position_data(timeout=timeout)
+        if position_data is None:
+            return None
+        coordinates, _ = position_data
+        return coordinates
+
+    def get_current_position_data(
+        self, timeout=2
+    ) -> Optional[Tuple[Tuple[float, float, float], float]]:
+        """Reads GPS coordinates and horizontal ground speed from one message."""
         msg = self._recv_autopilot_message('GLOBAL_POSITION_INT', timeout=timeout)
         if not msg:
             self.logger.warning("No GPS data received.")
             return None
-        return msg.lat / 1e7, msg.lon / 1e7, msg.alt / 1000.0
+        coordinates = msg.lat / 1e7, msg.lon / 1e7, msg.alt / 1000.0
+        # wylicza poziomą prędkość z wektorów vx i vy.
+        ground_speed_mps = math.hypot(msg.vx, msg.vy) / 100.0
+        return coordinates, ground_speed_mps
 
     def is_armed(self) -> bool:
         """

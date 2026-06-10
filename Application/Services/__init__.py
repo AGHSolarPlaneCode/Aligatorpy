@@ -6,6 +6,8 @@ from .gi_camera_handler import CameraPipeline
 from .DetectionPipelineService import DetectionPipelineService
 from .OokDetectionService import OokDetectionService
 from .MissionPlannerService import MissionPlannerService
+from .TelemetryCacheService import TelemetryCacheService
+from .LedFrequencyDetectionService import LedFrequencyDetectionService
 
 __all__ = [
     "MatekService",
@@ -15,4 +17,6 @@ __all__ = [
     "DetectionPipelineService",
     "OokDetectionService",
     "MissionPlannerService",
+    "TelemetryCacheService",
+    "LedFrequencyDetectionService",
 ]

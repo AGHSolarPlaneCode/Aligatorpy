@@ -1,36 +1,15 @@
 from __future__ import annotations
 
-import logging
 import math
 import time
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+import cv2
 import numpy as np
 
-logger = logging.getLogger(__name__)
-REQUIRED_OPENCV_MAJOR_VERSION = 4
 
-try:
-    import cv2
-except ImportError as exc:
-    logger.error(
-        "OpenCV is required by LedFrequencyDetectionService. "
-        "Install dependencies from Raspberry_configuration/config_files/requirements.txt."
-    )
-    raise ImportError("LedFrequencyDetectionService requires the cv2 module") from exc
-
-opencv_major_version = int(cv2.__version__.split(".", maxsplit=1)[0])
-if opencv_major_version != REQUIRED_OPENCV_MAJOR_VERSION:
-    logger.error(
-        "Unsupported OpenCV version %s; expected OpenCV %s.x",
-        cv2.__version__,
-        REQUIRED_OPENCV_MAJOR_VERSION,
-    )
-    raise RuntimeError(
-        f"Unsupported OpenCV version {cv2.__version__}; "
-        f"expected OpenCV {REQUIRED_OPENCV_MAJOR_VERSION}.x"
-    )
+CANDIDATE_FREQUENCIES = (2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0)
 
 
 @dataclass(frozen=True)
@@ -43,93 +22,83 @@ class LedDetection:
     coordinates: Optional[tuple[float, float]] = None
 
 
+@dataclass(frozen=True)
+class _BrightBlob:
+    x: float
+    y: float
+    area: int
+
+
 @dataclass
 class _LedTrack:
     track_id: int
-    x: float
-    y: float
+    roi_x: float
+    roi_y: float
     last_timestamp: float
+    latest_pixel: tuple[int, int]
     samples: list[tuple[float, float]] = field(default_factory=list)
+    observed_area: float = 0.0
     detected_frequency: Optional[float] = None
 
 
 class LedFrequencyDetectionService:
     """
-    Detects moving, blinking LEDs in monochrome camera frames.
+    Finds four requested OOK LEDs while the drone flies over the search zone.
 
-    First-version assumptions:
-    - the camera points vertically down;
-    - the drone flies at constant speed along the image Y axis;
-    - landing sites are at least ``minimum_site_distance_m`` apart;
-    - one LED represents one landing site.
+    Each potential LED gets a square moving ROI. The ROI follows only the
+    expected image movement along the flight direction. Wind can move the LED
+    inside the ROI without breaking its brightness history.
     """
 
     def __init__(
         self,
         led_frequencies: Iterable[float],
-        fps: float = 60.0,
-        camera_resolution: tuple[int, int] = (1280, 800),
+        fps: float = 200.0,
+        camera_resolution: tuple[int, int] = (640, 400),
         drone_speed_mps: float = 5.0,
-        drone_height_m: float = 60.0,
         field_width_m: float = 70.0,
-        brightness_threshold: int = 128,
+        brightness_threshold: int = 220,
         analysis_duration_s: float = 2.0,
-        frequency_tolerance_hz: float = 0.5,
+        roi_size_m: float = 6.0,
         minimum_site_distance_m: float = 10.0,
-        analysis_square_size_m: float = 6.0,
         image_motion_direction: int = 1,
         min_blob_area_px: int = 1,
-        max_blob_area_px: int = 25,
-        min_frequency_score: float = 0.12,
+        max_blob_area_px: int = 500,
+        min_confidence: float = 4.0,
+        duty_cycle_tolerance: float = 0.2,
     ):
         self.led_frequencies = tuple(float(value) for value in led_frequencies)
         self.fps = float(fps)
         self.width, self.height = camera_resolution
         self.drone_speed_mps = float(drone_speed_mps)
-        self.drone_height_m = float(drone_height_m)
         self.field_width_m = float(field_width_m)
         self.brightness_threshold = int(brightness_threshold)
         self.analysis_duration_s = float(analysis_duration_s)
-        self.frequency_tolerance_hz = float(frequency_tolerance_hz)
+        self.roi_size_m = float(roi_size_m)
         self.minimum_site_distance_m = float(minimum_site_distance_m)
-        self.analysis_square_size_m = float(analysis_square_size_m)
         self.image_motion_direction = 1 if image_motion_direction >= 0 else -1
         self.min_blob_area_px = int(min_blob_area_px)
         self.max_blob_area_px = int(max_blob_area_px)
-        self.min_frequency_score = float(min_frequency_score)
-        self.logger = logging.getLogger(__name__)
-
+        self.min_confidence = float(min_confidence)
+        self.duty_cycle_tolerance = float(duty_cycle_tolerance)
         self._validate_parameters()
 
         self.meters_per_pixel = self.field_width_m / self.width
-        self.analysis_square_px = max(
-            3, int(round(self.analysis_square_size_m / self.meters_per_pixel))
-        )
+        self.roi_size_px = max(3, int(round(self.roi_size_m / self.meters_per_pixel)))
+        self._roi_half_px = self.roi_size_px / 2.0
         self.image_velocity_y_px_s = (
-            self.image_motion_direction
-            * self.drone_speed_mps
-            / self.meters_per_pixel
+            self.image_motion_direction * self.drone_speed_mps / self.meters_per_pixel
         )
-        self._association_radius_px = self.analysis_square_px / 2.0
         self._tracks: list[_LedTrack] = []
         self._next_track_id = 0
         self._last_frame_timestamp: Optional[float] = None
 
     def _validate_parameters(self) -> None:
-        if not self.led_frequencies:
-            raise ValueError("led_frequencies cannot be empty")
-        if any(frequency <= 0 or frequency >= self.fps / 2 for frequency in self.led_frequencies):
-            raise ValueError("Each LED frequency must be between 0 and the Nyquist frequency")
-        if self.width <= 0 or self.height <= 0 or self.field_width_m <= 0:
-            raise ValueError("Camera resolution and field width must be positive")
-        if not 0 <= self.brightness_threshold <= 255:
-            raise ValueError("brightness_threshold must be between 0 and 255")
-        if self.analysis_duration_s <= 0:
-            raise ValueError("analysis_duration_s must be positive")
-        if self.analysis_square_size_m * math.sqrt(2) >= self.minimum_site_distance_m:
+        if any(frequency >= self.fps / 2 for frequency in CANDIDATE_FREQUENCIES):
+            raise ValueError("Camera FPS is too low for the candidate frequencies")
+        if self.roi_size_m * math.sqrt(2) >= self.minimum_site_distance_m:
             raise ValueError(
-                "The analysis square diagonal must be smaller than the minimum "
-                "distance between landing sites"
+                "The ROI diagonal must be smaller than the minimum distance between sites"
             )
 
     def reset(self) -> None:
@@ -139,129 +108,145 @@ class LedFrequencyDetectionService:
 
     def _prepare_frame(self, frame: np.ndarray) -> np.ndarray:
         array = np.asarray(frame)
-        expected_size = self.width * self.height
-        if array.ndim != 1 or array.size != expected_size:
-            raise ValueError(
-                f"Expected a flat GRAY8 frame with {expected_size} pixels, "
-                f"received shape {array.shape}"
-            )
-        return array.reshape(self.height, self.width)
+        if array.ndim == 1:
+            if array.size != self.width * self.height:
+                raise ValueError("Frame size does not match camera_resolution")
+            array = array.reshape(self.height, self.width)
+        elif array.ndim != 2 or array.shape != (self.height, self.width):
+            raise ValueError("Expected a flat or two-dimensional grayscale frame")
 
-    def _find_bright_points(self, frame: np.ndarray) -> list[tuple[float, float]]:
-        mask = (frame >= self.brightness_threshold).astype(np.uint8)
+        if array.dtype == np.uint16:
+            return (array >> 8).astype(np.uint8)
+        return array.astype(np.uint8, copy=False)
+
+    def _find_bright_blobs(self, frame: np.ndarray) -> list[_BrightBlob]:
+        mask = (frame > self.brightness_threshold).astype(np.uint8)
         count, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        points = []
+        blobs = []
         for label in range(1, count):
             area = int(stats[label, cv2.CC_STAT_AREA])
             if self.min_blob_area_px <= area <= self.max_blob_area_px:
-                points.append((float(centroids[label][0]), float(centroids[label][1])))
-        return points
+                blobs.append(
+                    _BrightBlob(
+                        x=float(centroids[label][0]),
+                        y=float(centroids[label][1]),
+                        area=area,
+                    )
+                )
+        return blobs
 
-    def _predict_tracks(self, timestamp: float) -> None:
+    def _predict_tracks(
+        self, timestamp: float, drone_speed_mps: Optional[float] = None
+    ) -> None:
+        speed_mps = self.drone_speed_mps if drone_speed_mps is None else drone_speed_mps
+        image_velocity_y_px_s = (
+            self.image_motion_direction * max(0.0, speed_mps) / self.meters_per_pixel
+        )
         for track in self._tracks:
             elapsed = max(0.0, timestamp - track.last_timestamp)
-            track.y += self.image_velocity_y_px_s * elapsed
+            track.roi_y += image_velocity_y_px_s * elapsed
             track.last_timestamp = timestamp
+            track.observed_area = 0.0
 
-    def _associate_points(self, points: list[tuple[float, float]], timestamp: float) -> None:
-        unused_points = set(range(len(points)))
+    def _inside_roi(self, track: _LedTrack, blob: _BrightBlob) -> bool:
+        return (
+            abs(blob.x - track.roi_x) <= self._roi_half_px
+            and abs(blob.y - track.roi_y) <= self._roi_half_px
+        )
+
+    def _associate_blobs(self, blobs: list[_BrightBlob], timestamp: float) -> None:
+        unused_blobs = set(range(len(blobs)))
 
         for track in self._tracks:
-            best_index = None
-            best_distance = self._association_radius_px
-            for index in unused_points:
-                x, y = points[index]
-                distance = math.hypot(x - track.x, y - track.y)
-                if distance < best_distance:
-                    best_index = index
-                    best_distance = distance
+            matches = [
+                index for index in unused_blobs if self._inside_roi(track, blobs[index])
+            ]
+            if not matches:
+                continue
 
-            if best_index is not None:
-                track.x, track.y = points[best_index]
-                unused_points.remove(best_index)
+            best_index = min(
+                matches,
+                key=lambda index: math.hypot(
+                    blobs[index].x - track.latest_pixel[0],
+                    blobs[index].y - track.latest_pixel[1],
+                ),
+            )
+            blob = blobs[best_index]
+            track.latest_pixel = (int(round(blob.x)), int(round(blob.y)))
+            track.observed_area = float(blob.area)
+            unused_blobs.remove(best_index)
 
-        for index in unused_points:
-            x, y = points[index]
+        for index in unused_blobs:
+            blob = blobs[index]
+            if any(self._inside_roi(track, blob) for track in self._tracks):
+                continue
+            pixel = (int(round(blob.x)), int(round(blob.y)))
             self._tracks.append(
                 _LedTrack(
                     track_id=self._next_track_id,
-                    x=x,
-                    y=y,
+                    roi_x=blob.x,
+                    roi_y=blob.y,
                     last_timestamp=timestamp,
+                    latest_pixel=pixel,
+                    observed_area=float(blob.area),
                 )
             )
             self._next_track_id += 1
-
-    def _sample_track_square(self, frame: np.ndarray, track: _LedTrack) -> float:
-        half = self.analysis_square_px // 2
-        center_x = int(round(track.x))
-        center_y = int(round(track.y))
-        x0 = max(0, center_x - half)
-        x1 = min(self.width, center_x + half + 1)
-        y0 = max(0, center_y - half)
-        y1 = min(self.height, center_y + half + 1)
-        if x0 >= x1 or y0 >= y1:
-            return 0.0
-        return float(np.max(frame[y0:y1, x0:x1]))
 
     def _estimate_frequency(
         self, samples: list[tuple[float, float]]
     ) -> Optional[tuple[float, float]]:
         timestamps = np.asarray([sample[0] for sample in samples], dtype=np.float64)
         brightness = np.asarray([sample[1] for sample in samples], dtype=np.float64)
-        binary_signal = (brightness >= self.brightness_threshold).astype(np.float64)
-        centered_signal = binary_signal - np.mean(binary_signal)
-
-        if np.max(binary_signal) == np.min(binary_signal):
+        signal = brightness - np.mean(brightness)
+        if float(np.dot(signal, signal)) <= 1e-9:
             return None
 
-        rising_edges = np.flatnonzero(np.diff(binary_signal) > 0.5) + 1
-        if len(rising_edges) < 2:
-            return None
-
-        edge_duration = timestamps[rising_edges[-1]] - timestamps[rising_edges[0]]
-        if edge_duration <= 0:
-            return None
-        measured_frequency = (len(rising_edges) - 1) / float(edge_duration)
-        expected_frequency = min(
-            self.led_frequencies,
-            key=lambda frequency: abs(frequency - measured_frequency),
-        )
-        if abs(expected_frequency - measured_frequency) > self.frequency_tolerance_hz:
+        duty_cycle = float(np.mean(brightness > 0))
+        if abs(duty_cycle - 0.5) > self.duty_cycle_tolerance:
             return None
 
         relative_time = timestamps - timestamps[0]
-        wave = np.exp(-2j * np.pi * expected_frequency * relative_time)
-        score = float(abs(np.mean(centered_signal * wave)))
-        if score < self.min_frequency_score:
+        frequencies = np.asarray(CANDIDATE_FREQUENCIES, dtype=np.float64)
+        phase = np.exp(-1j * 2.0 * np.pi * np.outer(frequencies, relative_time))
+        projection = phase @ signal
+        powers = projection.real ** 2 + projection.imag ** 2
+
+        order = np.argsort(powers)[::-1]
+        best_index = int(order[0])
+        second_power = float(powers[order[1]])
+        confidence = (
+            float(powers[best_index]) / second_power
+            if second_power > 1e-12
+            else float("inf")
+        )
+        if confidence < self.min_confidence:
             return None
-        return expected_frequency, score
+        return float(frequencies[best_index]), confidence
 
-    def process_frame(self, frame: np.ndarray, timestamp: float) -> list[LedDetection]:
-        """
-        Process one frame and return newly recognized target frequencies.
-
-        Repeated or out-of-order timestamps are ignored, which prevents repeated
-        calls to ``CameraPipeline.get_image()`` from analyzing the same frame.
-        """
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        timestamp: float,
+        drone_speed_mps: Optional[float] = None,
+    ) -> list[LedDetection]:
         if self._last_frame_timestamp is not None and timestamp <= self._last_frame_timestamp:
             return []
         self._last_frame_timestamp = timestamp
 
         gray = self._prepare_frame(frame)
-        self._predict_tracks(timestamp)
-        self._associate_points(self._find_bright_points(gray), timestamp)
+        self._predict_tracks(timestamp, drone_speed_mps)
+        self._associate_blobs(self._find_bright_blobs(gray), timestamp)
 
         detections = []
         active_tracks = []
+        oldest_allowed = timestamp - self.analysis_duration_s
+
         for track in self._tracks:
-            if -self.analysis_square_px <= track.y <= self.height + self.analysis_square_px:
+            if -self.roi_size_px <= track.roi_y <= self.height + self.roi_size_px:
                 active_tracks.append(track)
 
-            brightness = self._sample_track_square(gray, track)
-            track.samples.append((timestamp, brightness))
-
-            oldest_allowed = timestamp - self.analysis_duration_s
+            track.samples.append((timestamp, track.observed_area))
             while track.samples and track.samples[0][0] < oldest_allowed:
                 track.samples.pop(0)
 
@@ -277,11 +262,13 @@ class LedFrequencyDetectionService:
 
             frequency, confidence = estimate
             track.detected_frequency = frequency
+            if frequency not in self.led_frequencies:
+                continue
             detections.append(
                 LedDetection(
                     track_id=track.track_id,
                     frequency_hz=frequency,
-                    pixel=(int(round(track.x)), int(round(track.y))),
+                    pixel=track.latest_pixel,
                     confidence=confidence,
                     timestamp=timestamp,
                 )
@@ -290,21 +277,21 @@ class LedFrequencyDetectionService:
         self._tracks = active_tracks
         return detections
 
-    def project_detection(self, detection: LedDetection, drone, mission) -> LedDetection:
-        """
-        Project a detection to GPS using the existing MatekService/MissionService.
-
-        Drone position and attitude come from current MAVLink telemetry.
-        """
-        coordinates = drone.get_current_coordinates()
-        attitude = drone.get_attitude()
-        if coordinates is None or attitude is None:
+    def project_detection(self, detection: LedDetection, telemetry_cache, mission) -> LedDetection:
+        snapshot = telemetry_cache.get_latest()
+        if snapshot is None:
             return detection
 
-        latitude, longitude, altitude = coordinates
-        roll, pitch, yaw = attitude
+        latitude, longitude, altitude = snapshot.coordinates
+        roll, pitch, yaw = snapshot.attitude
+        mission_width = getattr(mission, "image_width", self.width)
+        mission_height = getattr(mission, "image_height", self.height)
+        pixel = (
+            int(detection.pixel[0] * mission_width / self.width),
+            int(detection.pixel[1] * mission_height / self.height),
+        )
         target = mission.project_target_cords(
-            detection.pixel,
+            pixel,
             latitude,
             longitude,
             altitude,
@@ -333,19 +320,17 @@ class LedFrequencyDetectionService:
     def run(
         self,
         camera,
-        drone=None,
+        telemetry_cache=None,
         mission=None,
         stop_event=None,
         max_duration_s: Optional[float] = None,
     ) -> list[LedDetection]:
-        """Read frames from ``gi_camera_handler.CameraPipeline`` until all targets are found."""
         self.reset()
         camera.set_120fps_active(True)
-        detections: list[LedDetection] = []
-        detected_frequencies: set[float] = set()
+        best_detections: dict[float, LedDetection] = {}
         start_time = time.monotonic()
 
-        while len(detections) < len(self.led_frequencies):
+        while len(best_detections) < len(self.led_frequencies):
             if stop_event is not None and stop_event.is_set():
                 break
             if max_duration_s is not None and time.monotonic() - start_time >= max_duration_s:
@@ -353,21 +338,29 @@ class LedFrequencyDetectionService:
 
             frame, timestamp, error = camera.get_image()
             if error is not None or frame is None or timestamp is None:
-                time.sleep(0.001)
+                time.sleep(0.5 / self.fps)
                 continue
 
-            new_detections = self.process_frame(frame, timestamp)
-            for detection in new_detections:
-                if detection.frequency_hz in detected_frequencies:
-                    continue
-                if drone is not None and mission is not None:
-                    detection = self.project_detection(detection, drone, mission)
+            drone_speed_mps = None
+            if telemetry_cache is not None:
+                snapshot = telemetry_cache.get_latest()
+                if snapshot is not None:
+                    drone_speed_mps = snapshot.ground_speed_mps
+
+            for detection in self.process_frame(frame, timestamp, drone_speed_mps):
+                if telemetry_cache is not None and mission is not None:
+                    detection = self.project_detection(detection, telemetry_cache, mission)
                     if detection.coordinates is None:
                         self._allow_detection_retry(detection.track_id)
                         continue
-                detections.append(detection)
-                detected_frequencies.add(detection.frequency_hz)
+                previous = best_detections.get(detection.frequency_hz)
+                if previous is None or detection.confidence > previous.confidence:
+                    best_detections[detection.frequency_hz] = detection
 
-            time.sleep(0.0005)
+            time.sleep(0.5 / self.fps)
 
-        return detections
+        return [
+            best_detections[frequency]
+            for frequency in self.led_frequencies
+            if frequency in best_detections
+        ]
