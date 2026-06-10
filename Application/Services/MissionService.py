@@ -58,15 +58,15 @@ class MissionService:
             return None
         
         # korekta dystorsji
-        undistorted = cv2.undistortPoints(
-            np.array([[u, v]], dtype=np.float32),
+        undistorted = cv2.fisheye.undistortPoints(
+            np.array([[[u, v]]], dtype=np.float32),
             cameraMatrix=MissionService.K,
             distCoeffs=MissionService.dist
         )
         x_u, y_u = undistorted[0,0]
         
         # promień w układzie kamery
-        ray_cam = np.array([x_u, y_u, 1.0]) #minus przy y_u
+        ray_cam = np.array([x_u, -y_u, 1.0]) #minus przy y_u
         ray_cam /= np.linalg.norm(ray_cam)
 
         R_world_body = self.rot_matrix(roll, pitch, yaw)
@@ -86,8 +86,8 @@ class MissionService:
         # ---- GPS offset ----
         lat_t, lon_t = mavextra.gps_offset(
             lat_uav, lon_uav,
-            hit_local[0],  # north
-            hit_local[1]   # east
+            hit_local[1],  # east switched
+            hit_local[0]   # north switched
         )
         print("detected point", lat_t, lon_t)
         return lat_t, lon_t
