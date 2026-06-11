@@ -11,15 +11,15 @@ wind_direction = 270
 altitude = 50
 
 [drops.beacon]
-mass = 500
-cd = 0.55
+mass = 250
+cd = 0.6
 drop_course = 120
 x_translation = 1.888937981556584e-16
 y_translation = 1.028289943338078
 
 [drops.bottle]
-mass = 500
-cd = 0.55
+mass = 250
+cd = 0.6
 drop_course = 120
 x_translation = 3.0149249673174517e-16
 y_translation = 1.6412487091061998
@@ -68,21 +68,21 @@ debug_mode = false
 search_zone_path = "gliwice_big_debug.poly"
 
 [mission]
-start_wp = 4
+start_wp = 3
 stop_wp = 6
 is_bottle = true
 modulation_start_wp = 4
 landing_sites = [
-    { lat = 50.271, lon = 18.672 },
-    { lat = 50.2714, lon = 18.673 },
-    { lat = 50.2718, lon = 18.674 },
-    { lat = 50.2722, lon = 18.675 },
-    { lat = 50.2706, lon = 18.6735 },
-    { lat = 50.2702, lon = 18.6745 },
-    { lat = 50.2698, lon = 18.6755 },
-    { lat = 50.2704, lon = 18.6715 },
-    { lat = 50.2708, lon = 18.6705 },
-    { lat = 50.2712, lon = 18.676 },
+    { lat = 50.2714, lon = 18.67201 },
+    { lat = 50.2714, lon = 18.67223 },
+    { lat = 50.2714, lon = 18.67245 },
+    { lat = 50.2714, lon = 18.67267 },
+    { lat = 50.2714, lon = 18.67289 },
+    { lat = 50.2714, lon = 18.67311 },
+    { lat = 50.2714, lon = 18.67333 },
+    { lat = 50.2714, lon = 18.67355 },
+    { lat = 50.2714, lon = 18.67377 },
+    { lat = 50.2714, lon = 18.67399 },
 ]
 
 [mission.ook_static]
@@ -107,14 +107,6 @@ candidates = [
     16,
     18,
     20,
-    23,
-    25,
-    27,
-    90,
-    94,
-    96,
-    98,
-    100,
 ]
 min_confidence = 4.0
 roi_size = 40

@@ -460,7 +460,7 @@ class MissionService:
             "lon": drop_point["lon"],
             "alt": cfg.drops.altitude,
             "time": 3,
-            "radius": 1,
+            "radius": 5,
         })
 
         if drop_point.get("isBottle"):

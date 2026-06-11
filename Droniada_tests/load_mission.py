@@ -63,7 +63,7 @@ def load_waypoints_file(path):
     	    waypoints.append({"command": "TAKEOFF", "alt": alt})
     return waypoints
 
-#drone = MatekService(device="tcp:192.168.161.240:5771")
+#drone = MatekService(device="tcp:192.168.161.52:5763")
 drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
 
 waypoints = load_waypoints_file(filename)
