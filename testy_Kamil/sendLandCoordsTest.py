@@ -6,11 +6,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 # Initialize connection
 from Application.Services.MatekService import MatekService
 from Application.Services.MissionService import MissionService
+from Application.configuration.config_loader import cfg
 
 
 
-
-drone = MatekService(device="/dev/ttyAMA0")
+drone = MatekService(device=cfg.mav.device)
 
 drone.send_landing_sites([
     (50.1, 19.1),

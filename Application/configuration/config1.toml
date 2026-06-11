@@ -11,16 +11,16 @@ wind_direction = 270
 altitude = 60
 
 [drops.beacon]
-mass = 0.25
-cd = 0.5
-drop_course = 120
+mass = 500
+cd = 1
+drop_course = 10
 x_translation = -59.73950087139867
 y_translation = 4.115124782150331
 
 [drops.bottle]
-mass = 0.25
-cd = 0.5
-drop_course = 120
+mass = 500
+cd = 0.2
+drop_course = 10
 x_translation = -66.33412669407143
 y_translation = 1.4164683264821387
 
@@ -31,14 +31,14 @@ resolution = [
 ]
 K = [
     [
-        420.56624654,
+        346.22956795,
         0.0,
-        313.86132572,
+        317.53913984,
     ],
     [
         0.0,
-        421.58131545,
-        203.36702095,
+        346.26282973,
+        197.63094539,
     ],
     [
         0.0,
@@ -47,12 +47,13 @@ K = [
     ],
 ]
 distortion = [
-    -0.06905645,
-    0.07627358,
-    -0.11298309,
-    0.05177157,
+    -0.34219431,
+    0.123526508,
+    0.00470056821,
+    -0.000109821856,
+    -0.0211505931,
 ]
-fisheye = true
+fisheye = false
 
 [dirs]
 logs_dir = "media/logs"

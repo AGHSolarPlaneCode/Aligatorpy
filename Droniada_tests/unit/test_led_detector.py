@@ -57,6 +57,18 @@ class TestLedDetector(unittest.TestCase):
         self.detector.reset()
         self.assertEqual(self.detector._detected_targets, [])
 
+    def test_crop_offsets_coordinates_to_full_frame(self):
+        detector = LedDetector(640, 400, crop_horizontal=160, crop_vertical=75)
+        frame = _blank_frame(640, 400)
+        # Jasny punkt w środku obszaru po cropie (160+160, 75+125) = (320, 200)
+        _add_bright_spot(frame, 320, 200, radius=4)
+
+        targets = detector.process_frame(frame)
+        visible = [t for t in targets if t["frames_unseen"] == 0]
+        self.assertEqual(len(visible), 1)
+        self.assertEqual(visible[0]["x"], 320)
+        self.assertEqual(visible[0]["y"], 200)
+
 
 if __name__ == "__main__":
     unittest.main()

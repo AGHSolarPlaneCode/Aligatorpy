@@ -37,6 +37,7 @@ class CameraConfig:
     resolution: tuple[int, int]
     K: np.ndarray
     distortion: np.ndarray
+    fisheye: bool
 
 @dataclass(frozen=True)
 class DirsConfig:
@@ -135,7 +136,8 @@ class Config:
             cam = data["camera"]
             self.camera = CameraConfig(resolution=tuple(cam["resolution"]),
                         K=np.array(cam["K"], dtype=np.float32),
-                        distortion=np.array(cam["distortion"], dtype=np.float32)
+                        distortion=np.array(cam["distortion"], dtype=np.float32),
+                        fisheye=bool(cam["fisheye"])
             )
 
             dirs = data["dirs"]

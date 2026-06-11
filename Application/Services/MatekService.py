@@ -12,9 +12,11 @@ from Application.Logger.log_module import get_logger
 
 
 class MatekService:
-    BOTTLE_SERVO_CHANNEL = 9
-    BEACON_SERVO_CHANNEL = 8
-    PWM_DROP_SERVO = 800
+    SERVO_CHANNEL_LEFT = 5
+    SERVO_CHANNEL_RIGHT = 6
+    PWM_DROP_LEFT = 1900
+    PWM_DROP_RIGHT = 1100
+
     
     """
     Example usage:
@@ -210,9 +212,11 @@ class MatekService:
             "WAYPOINT": 16,
             "SET_SERVO": 183,
             "TAKEOFF": 22,
+            "LAND": 21,
+             "RTL": 20,
             "NAV_LOITER_UNLIM": mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
             "NAV_LOITER_TIME": mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
-        }
+            }
 
         all_waypoints = [home] + waypoints
         
@@ -346,6 +350,33 @@ class MatekService:
                         int(wp["lat"] * 1e7),
                         int(wp["lon"] * 1e7),
                         wp["alt"]
+                    )
+
+                elif cmd == 21:  # LAND
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                        mavutil.mavlink.MAV_CMD_NAV_LAND,
+                        is_current,
+                        1,
+                        0, 0, 0, 0,
+                        int(wp["lat"] * 1e7),
+                        int(wp["lon"] * 1e7),
+                        wp.get("alt", 0)
+                    )
+
+                elif cmd == 20:  # RTL
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_MISSION,
+                        mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                        is_current,
+                        1,
+                        0, 0, 0, 0, 0, 0, 0
                     )
                 else:
                     self.logger.error(f"Unknown command in waypoint {i}: {wp['command']}")

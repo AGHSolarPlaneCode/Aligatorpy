@@ -24,6 +24,7 @@ class MissionService:
 
     K = cfg.camera.K
     dist = cfg.camera.distortion
+    fisheye = cfg.camera.fisheye
 
     
     def rot_matrix(self, roll, pitch, yaw):
@@ -58,11 +59,20 @@ class MissionService:
             return None
         
         # korekta dystorsji
-        undistorted = cv2.undistortPoints(
+        if MissionService.fisheye:
+            undistorted = cv2.fisheye.undistortPoints(
+            np.array([[[float(u), float(v)]]], dtype=np.float64),
+            MissionService.K,
+            MissionService.dist
+            )
+            #print("-----------------fisheye------------------")
+        else:
+            undistorted = cv2.undistortPoints(
             np.array([[u, v]], dtype=np.float32),
             cameraMatrix=MissionService.K,
             distCoeffs=MissionService.dist
         )
+
         x_u, y_u = undistorted[0,0]
         
         # promień w układzie kamery
@@ -86,8 +96,8 @@ class MissionService:
         # ---- GPS offset ----
         lat_t, lon_t = mavextra.gps_offset(
             lat_uav, lon_uav,
-            hit_local[0],  # north
-            hit_local[1]   # east
+            hit_local[0],  # east unswitched
+            hit_local[1]   # north unswitched
         )
         print("detected point", lat_t, lon_t)
         return lat_t, lon_t
@@ -280,14 +290,14 @@ class MissionService:
                 if drop_point.get("isBottle"): 
                     container.append({
                         "command": "SET_SERVO",
-                        "channel": MatekService.BOTTLE_SERVO_CHANNEL,
-                        "pwm": MatekService.PWM_DROP_SERVO
+                        "channel": MatekService.SERVO_CHANNEL_LEFT,
+                        "pwm": MatekService.PWM_DROP_LEFT
                     })
                 else:
                     container.append({
                         "command": "SET_SERVO",
-                        "channel": MatekService.BEACON_SERVO_CHANNEL,
-                        "pwm": MatekService.PWM_DROP_SERVO
+                        "channel": MatekService.SERVO_CHANNEL_RIGHT,
+                        "pwm": MatekService.PWM_DROP_LEFT
                     })
 
         return container
