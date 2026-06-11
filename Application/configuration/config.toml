@@ -114,6 +114,12 @@ lon = 18.6705
 lat = 50.2712
 lon = 18.6760
 
+[mission.ook_static]
+# Misja w pełni w Mission Planner — skrypt tylko monitoruje LOITER i dopisuje zrzuty
+monitor_start_wp = 4
+# Puste = auto-wykrywanie NAV_LOITER_TIME z misji FC (kolejność = kolejność w MP)
+loiter_wp_indices = []
+
 [mission.loiter]
 time = 15
 alt = 50

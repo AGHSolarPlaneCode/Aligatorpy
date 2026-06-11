@@ -48,6 +48,30 @@ class TestMissionPlannerService(unittest.TestCase):
         indices = self.planner.loiter_wp_indices(first_approach_wp=10, site_count=3)
         self.assertEqual(indices, [11, 13, 15])
 
+    def test_extract_loiter_sites_from_mission_auto(self):
+        mission = [
+            {"seq": 0, "command": 22, "param5": 0, "param6": 0},
+            {"seq": 4, "command": 16, "param5": int(50.0 * 1e7), "param6": int(19.0 * 1e7)},
+            {"seq": 5, "command": 19, "param5": int(50.1 * 1e7), "param6": int(19.1 * 1e7)},
+            {"seq": 7, "command": 19, "param5": int(50.2 * 1e7), "param6": int(19.2 * 1e7)},
+        ]
+        indices, targets = self.planner.extract_loiter_sites_from_mission(mission)
+        self.assertEqual(indices, [5, 7])
+        self.assertAlmostEqual(targets[0]["lat"], 50.1, places=4)
+        self.assertAlmostEqual(targets[1]["lon"], 19.2, places=4)
+
+    def test_extract_loiter_sites_from_mission_explicit(self):
+        mission = [
+            {"seq": 5, "command": 19, "param5": int(50.1 * 1e7), "param6": int(19.1 * 1e7)},
+            {"seq": 7, "command": 19, "param5": int(50.2 * 1e7), "param6": int(19.2 * 1e7)},
+        ]
+        indices, targets = self.planner.extract_loiter_sites_from_mission(
+            mission, loiter_wp_indices=[7, 5]
+        )
+        self.assertEqual(indices, [7, 5])
+        self.assertAlmostEqual(targets[0]["lat"], 50.2, places=4)
+        self.assertAlmostEqual(targets[1]["lat"], 50.1, places=4)
+
     def test_build_landing_sites_filters_by_confidence(self):
         targets = [
             {"lat": 50.0, "lon": 19.0},

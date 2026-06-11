@@ -74,6 +74,11 @@ class LandingSiteConfig:
     lon: float
 
 @dataclass(frozen=True)
+class OokStaticConfig:
+    monitor_start_wp: int
+    loiter_wp_indices: tuple[int, ...]
+
+@dataclass(frozen=True)
 class MissionConfig:
     start_wp: int
     stop_wp: int
@@ -81,6 +86,7 @@ class MissionConfig:
     modulation_start_wp: int
     loiter: LoiterConfig
     ook: OokConfig
+    ook_static: OokStaticConfig
     landing_sites: tuple[LandingSiteConfig, ...]
 
 
@@ -167,14 +173,16 @@ class Config:
             mission = data["mission"]
             loiter = mission["loiter"]
             ook = mission["ook"]
+            ook_static = mission.get("ook_static", {})
             landing_sites_raw = mission.get("landing_sites", [])
+            modulation_start_wp = mission.get(
+                "modulation_start_wp", mission["start_wp"]
+            )
             self.mission = MissionConfig(
                 start_wp=mission["start_wp"],
                 stop_wp=mission["stop_wp"],
                 is_bottle=mission["is_bottle"],
-                modulation_start_wp=mission.get(
-                    "modulation_start_wp", mission["start_wp"]
-                ),
+                modulation_start_wp=modulation_start_wp,
                 loiter=LoiterConfig(
                     time=loiter["time"],
                     alt=loiter["alt"],
@@ -187,6 +195,14 @@ class Config:
                     min_confidence=ook["min_confidence"],
                     roi_size=ook["roi_size"],
                     brightness_threshold=ook["brightness_threshold"],
+                ),
+                ook_static=OokStaticConfig(
+                    monitor_start_wp=ook_static.get(
+                        "monitor_start_wp", modulation_start_wp
+                    ),
+                    loiter_wp_indices=tuple(
+                        ook_static.get("loiter_wp_indices", [])
+                    ),
                 ),
                 landing_sites=tuple(
                     LandingSiteConfig(lat=site["lat"], lon=site["lon"])

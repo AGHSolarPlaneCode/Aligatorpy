@@ -3,9 +3,13 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Tuple
 
+from pymavlink import mavutil
+
 from Application.Logger.log_module import get_logger
 from Application.Services.MissionService import MissionService
 from Application.configuration.config_loader import LoiterConfig
+
+_LOITER_TIME_CMD = mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME
 
 
 class MissionPlannerService:
@@ -93,6 +97,53 @@ class MissionPlannerService:
     def loiter_wp_indices(first_approach_wp: int, site_count: int) -> List[int]:
         """Indeksy LOITER w misji z parami WAYPOINT+LOITER (LOITER co drugi wp)."""
         return [first_approach_wp + 2 * i + 1 for i in range(site_count)]
+
+    @staticmethod
+    def extract_loiter_sites_from_mission(
+        mission_items: List[Dict[str, Any]],
+        loiter_wp_indices: List[int] | None = None,
+    ) -> Tuple[List[int], List[Dict[str, Any]]]:
+        """
+        Wyciąga indeksy i współrzędne NAV_LOITER_TIME z misji FC.
+
+        Gdy podano loiter_wp_indices, bierze tylko te seq (współrz. z misji).
+        W przeciwnym razie wszystkie LOITER_TIME w kolejności seq.
+        """
+        by_seq = {item["seq"]: item for item in mission_items}
+
+        if loiter_wp_indices:
+            indices: List[int] = []
+            targets: List[Dict[str, Any]] = []
+            for seq in loiter_wp_indices:
+                item = by_seq.get(seq)
+                if item is None:
+                    raise ValueError(f"Waypoint seq {seq} not found in FC mission")
+                if item["command"] != _LOITER_TIME_CMD:
+                    raise ValueError(
+                        f"Waypoint seq {seq} is not NAV_LOITER_TIME (cmd={item['command']})"
+                    )
+                indices.append(seq)
+                targets.append(
+                    {
+                        "lat": item["param5"] / 1e7,
+                        "lon": item["param6"] / 1e7,
+                    }
+                )
+            return indices, targets
+
+        indices = []
+        targets = []
+        for item in sorted(mission_items, key=lambda wp: wp["seq"]):
+            if item["command"] != _LOITER_TIME_CMD:
+                continue
+            indices.append(item["seq"])
+            targets.append(
+                {
+                    "lat": item["param5"] / 1e7,
+                    "lon": item["param6"] / 1e7,
+                }
+            )
+        return indices, targets
 
     @staticmethod
     def _freq_matches(detected: float, desired: float, tolerance: float = 0.01) -> bool:
