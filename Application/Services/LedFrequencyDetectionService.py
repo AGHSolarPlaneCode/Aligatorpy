@@ -9,7 +9,8 @@ import cv2
 import numpy as np
 
 
-CANDIDATE_FREQUENCIES = (2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0)
+CANDIDATE_FREQUENCIES_BASIC = tuple(range(2, 21, 2))
+CANDIDATE_FREQUENCIES_ADVANCED = tuple(range(21, 101))
 
 
 @dataclass(frozen=True)
@@ -48,12 +49,26 @@ class LedFrequencyDetectionService:
     Each potential LED gets a square moving ROI. The ROI follows only the
     expected image movement along the flight direction. Wind can move the LED
     inside the ROI without breaking its brightness history.
+
+    Max drone speed for LED detection on 240 FPS in test environment is 15 m/s, 
+    for safe detection better use 10-12 m/s.
+
+    Drone speed is taken from the telemetry (untested), drone_speed_mps is a 
+    fallback parameter.
+
+    analysis_duration_s should be balanced with drone speed, for 12 m/s max 
+    is 2.5 s. Increasing analysis duration increases precision, but too big 
+    can result in unfinished analysis.
+    
+    Service can be tested with tests/generate_led_frequency_demo, it simulates
+    video from the camera and detects led on it, video is saved in media folder
     """
 
     def __init__(
         self,
         led_frequencies: Iterable[float],
-        fps: float = 200.0,
+        candidate_frequencies: Iterable[float] = CANDIDATE_FREQUENCIES_ADVANCED,
+        fps: float = 240.0,
         camera_resolution: tuple[int, int] = (640, 400),
         drone_speed_mps: float = 5.0,
         field_width_m: float = 70.0,
@@ -61,13 +76,14 @@ class LedFrequencyDetectionService:
         analysis_duration_s: float = 2.0,
         roi_size_m: float = 6.0,
         minimum_site_distance_m: float = 10.0,
-        image_motion_direction: int = 1,
+        image_motion_direction: int = 1,        # set -1 if camera is turned backwards
         min_blob_area_px: int = 1,
         max_blob_area_px: int = 500,
         min_confidence: float = 4.0,
         duty_cycle_tolerance: float = 0.2,
     ):
         self.led_frequencies = tuple(float(value) for value in led_frequencies)
+        self.candidate_frequencies = tuple(float(value) for value in candidate_frequencies)
         self.fps = float(fps)
         self.width, self.height = camera_resolution
         self.drone_speed_mps = float(drone_speed_mps)
@@ -94,7 +110,7 @@ class LedFrequencyDetectionService:
         self._last_frame_timestamp: Optional[float] = None
 
     def _validate_parameters(self) -> None:
-        if any(frequency >= self.fps / 2 for frequency in CANDIDATE_FREQUENCIES):
+        if any(frequency >= self.fps / 2 for frequency in self.candidate_frequencies):
             raise ValueError("Camera FPS is too low for the candidate frequencies")
         if self.roi_size_m * math.sqrt(2) >= self.minimum_site_distance_m:
             raise ValueError(
@@ -207,7 +223,7 @@ class LedFrequencyDetectionService:
             return None
 
         relative_time = timestamps - timestamps[0]
-        frequencies = np.asarray(CANDIDATE_FREQUENCIES, dtype=np.float64)
+        frequencies = np.asarray(self.candidate_frequencies, dtype=np.float64)
         phase = np.exp(-1j * 2.0 * np.pi * np.outer(frequencies, relative_time))
         projection = phase @ signal
         powers = projection.real ** 2 + projection.imag ** 2

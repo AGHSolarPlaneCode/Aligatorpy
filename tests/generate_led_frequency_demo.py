@@ -27,25 +27,28 @@ DEFAULT_OUTPUT_DIR = (
     / "led_frequency_demo"
 )
 
-
 def generate_demo(
     output_dir: Path,
-    fps: int = 60,
+    fps: int = 240,
     duration_s: float = 6.0,
     wind: bool = True,
     noise: bool = True,
 ) -> Path:
     resolution = (640, 400)
     width, height = resolution
-    requested = [2.0, 8.0, 12.0, 16.0]
+    requested = [22.0, 24.0, 56.0, 98.0]
     service = LedFrequencyDetectionService(
         led_frequencies=requested,
+        candidate_frequencies=MODULE.CANDIDATE_FREQUENCIES_ADVANCED,
         fps=fps,
         camera_resolution=resolution,
+        drone_speed_mps=12.0,
     )
     leds = [
-        (60 + index * 60, -50 + (index % 5) * 55, frequency)
-        for index, frequency in enumerate(MODULE.CANDIDATE_FREQUENCIES)
+        (100, 20, 22.0),
+        (240, 70, 24.0),
+        (380, 120, 56.0),
+        (520, 170, 98.0),
     ]
 
     output_dir.mkdir(parents=True, exist_ok=True)
