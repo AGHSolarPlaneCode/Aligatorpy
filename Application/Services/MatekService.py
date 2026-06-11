@@ -12,9 +12,11 @@ from Application.Logger.log_module import get_logger
 
 
 class MatekService:
-    BOTTLE_SERVO_CHANNEL = 9
-    BEACON_SERVO_CHANNEL = 8
-    PWM_DROP_SERVO = 800
+    SERVO_CHANNEL_LEFT = 5
+    SERVO_CHANNEL_RIGHT = 6
+    PWM_DROP_LEFT = 1900
+    PWM_DROP_RIGHT = 1100
+
     
     """
     Example usage:
