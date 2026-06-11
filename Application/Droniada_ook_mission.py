@@ -117,7 +117,7 @@ class DroniadaOokMissionOrchestrator:
                 current_loiter_idx += 1
 
             self.camera.get_image()
-            time.sleep(0.2)
+            #time.sleep(0.2)
 
         return ook_results
 
