@@ -375,7 +375,7 @@ class MissionService:
 
 
 
-    def process_landing_sites(self, sites: list[tuple[float, float]], loiter_points: list[tuple[float, float]] = None) -> bool:
+    def process_landing_sites(self, sites: list[tuple[float, float]], loiter_points: list[tuple[float, float]] = None, break_points: list[tuple[float, float]] = None) -> bool:
         if not sites:
             self.logger.warning("process_landing_sites: empty sites list")
             return False
@@ -385,7 +385,7 @@ class MissionService:
             self.logger.error("process_landing_sites: no attitude data")
             return False
 
-        yaw = attitude[2]
+        yaw = cfg.drops.beacon.drop_course
 
         pairs = []
         for i in range(0, len(sites), 2):
@@ -399,6 +399,16 @@ class MissionService:
             is_bottle = (i == 1)
             drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
             self.calc_drop_waypoints(drop_point, yaw, container)
+
+            if i == 0 and break_points:
+                for blat, blon in break_points:
+                    container.append({
+                        "command": "WAYPOINT",
+                        "lat": blat,
+                        "lon": blon,
+                        "alt": cfg.drops.altitude,
+                        "acr": 15
+                    })
 
         if loiter_points:
             existing_dist = self.calc_route_distance(container)
@@ -417,6 +427,16 @@ class MissionService:
                 drop_point = self.calc_drop_coords({"lat": lat, "lon": lon, "isBottle": is_bottle})
                 self.calc_drop_waypoints(drop_point, yaw, container)
 
+                if i == 0 and break_points:
+                    for blat, blon in break_points:
+                        container.append({
+                            "command": "WAYPOINT",
+                            "lat": blat,
+                            "lon": blon,
+                            "alt": cfg.drops.altitude,
+                            "acr": 15
+                        })
+                        
             if loiter_points:
                 existing_dist = self.calc_route_distance(container)
                 print("Zrzuty dystans:", existing_dist, "Pozostało do 8km:", 8000 - existing_dist)

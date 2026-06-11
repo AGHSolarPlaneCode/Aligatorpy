@@ -35,13 +35,15 @@ zone_points = [
 loiter_points = [
     (50.2683316, 18.6695051),
     (50.2707181, 18.6691618),
-    (50.270752, 18.676794),
+    (50.2694014, 18.6771655),
+    (50.2705535, 18.6981297),
     (50.2685510, 18.6979151),
-    (50.2697031,18.6978722),
     (50.2683316, 18.6695051)
 ]
 
-
+break_points = [
+    (50.2685648,18.6733460)
+]
 landing_sites = []
 collecting = False
 
@@ -66,7 +68,7 @@ def handle_landing(mission):
             for lat, lon in landing_sites:
                 f.write(f"{lat},{lon}\n")
         logger.info("[LANDING] Zapisano lądowiska do landing_sites.txt")
-        mission.process_landing_sites(landing_sites, loiter_points)
+        mission.process_landing_sites(landing_sites, loiter_points, break_points)
         logger.info("[LANDING] Gotowe")
     except Exception as e:
         logger.info(f"[LANDING] Błąd: {type(e).__name__}: {e}")

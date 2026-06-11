@@ -14,12 +14,17 @@ sites = [(50.2683316, 18.6695051),
 loiter_points = [
     (50.2683316, 18.6695051),
     (50.2707181, 18.6691618),
-    (50.270752, 18.676794),
+    (50.2694014, 18.6771655),
+    (50.2705535, 18.6981297),
     (50.2685510, 18.6979151),
-    (50.2697031, 18.6978722),
     (50.2683316, 18.6695051)
 ]
 
-mission.process_landing_sites(sites, loiter_points)
+break_points = [
+    (50.2685373,18.6730886)
+]
+
+
+mission.process_landing_sites(sites, loiter_points, break_points)
 
 print("Done")
