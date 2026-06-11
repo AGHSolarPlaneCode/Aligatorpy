@@ -71,48 +71,19 @@ search_zone_path = "gliwice_big_debug.poly"
 start_wp = 4
 stop_wp = 6
 is_bottle = true
-# Indeks waypointu w MP, przy którym dopinamy trasę OOK (pary WAYPOINT + LOITER)
 modulation_start_wp = 4
-
-[[mission.landing_sites]]
-lat = 50.2710
-lon = 18.6720
-
-[[mission.landing_sites]]
-lat = 50.2714
-lon = 18.6730
-
-[[mission.landing_sites]]
-lat = 50.2718
-lon = 18.6740
-
-[[mission.landing_sites]]
-lat = 50.2722
-lon = 18.6750
-
-[[mission.landing_sites]]
-lat = 50.2706
-lon = 18.6735
-
-[[mission.landing_sites]]
-lat = 50.2702
-lon = 18.6745
-
-[[mission.landing_sites]]
-lat = 50.2698
-lon = 18.6755
-
-[[mission.landing_sites]]
-lat = 50.2704
-lon = 18.6715
-
-[[mission.landing_sites]]
-lat = 50.2708
-lon = 18.6705
-
-[[mission.landing_sites]]
-lat = 50.2712
-lon = 18.6760
+landing_sites = [
+    { lat = 50.271, lon = 18.672 },
+    { lat = 50.2714, lon = 18.673 },
+    { lat = 50.2718, lon = 18.674 },
+    { lat = 50.2722, lon = 18.675 },
+    { lat = 50.2706, lon = 18.6735 },
+    { lat = 50.2702, lon = 18.6745 },
+    { lat = 50.2698, lon = 18.6755 },
+    { lat = 50.2704, lon = 18.6715 },
+    { lat = 50.2708, lon = 18.6705 },
+    { lat = 50.2712, lon = 18.676 },
+]
 
 [mission.loiter]
 time = 15

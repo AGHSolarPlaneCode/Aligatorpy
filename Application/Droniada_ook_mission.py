@@ -30,7 +30,8 @@ class DroniadaOokMissionOrchestrator:
     def __init__(self, dry_run: bool = False, camera: CameraPipeline | None = None):
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
-        self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        self.drone = MatekService("tcp:192.168.161.52:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
         self.camera = camera or CameraPipeline()
