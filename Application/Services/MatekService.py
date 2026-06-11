@@ -201,7 +201,7 @@ class MatekService:
             "RTL": 20,
             "NAV_LOITER_UNLIM": mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
             "NAV_LOITER_TIME": mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
-        }
+            }
 
         all_waypoints = [home] + waypoints
         

@@ -290,14 +290,14 @@ class MissionService:
                 if drop_point.get("isBottle"): 
                     container.append({
                         "command": "SET_SERVO",
-                        "channel": MatekService.BOTTLE_SERVO_CHANNEL,
-                        "pwm": MatekService.PWM_DROP_SERVO
+                        "channel": MatekService.SERVO_CHANNEL_LEFT,
+                        "pwm": MatekService.PWM_DROP_LEFT
                     })
                 else:
                     container.append({
                         "command": "SET_SERVO",
-                        "channel": MatekService.BEACON_SERVO_CHANNEL,
-                        "pwm": MatekService.PWM_DROP_SERVO
+                        "channel": MatekService.SERVO_CHANNEL_RIGHT,
+                        "pwm": MatekService.PWM_DROP_LEFT
                     })
 
         return container
