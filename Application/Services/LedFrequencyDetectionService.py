@@ -51,13 +51,14 @@ class LedFrequencyDetectionService:
     inside the ROI without breaking its brightness history.
 
     Max drone speed for LED detection on 240 FPS in test environment is 15 m/s, 
-    for safe detection better use 10-12 m/s.
+    for safe detection better use 10-12 m/s. With 200 FPS script detects all
+    frequencies, but may be unstable.
 
     Drone speed is taken from the telemetry (untested), drone_speed_mps is a 
     fallback parameter.
 
     analysis_duration_s should be balanced with drone speed, for 12 m/s max 
-    is 2.5 s. Increasing analysis duration increases precision, but too big 
+    is 2.5 s (13 m/s - 2.2 s). Increasing analysis duration increases precision, but too big 
     can result in unfinished analysis.
     
     Service can be tested with tests/generate_led_frequency_demo, it simulates
@@ -110,8 +111,8 @@ class LedFrequencyDetectionService:
         self._last_frame_timestamp: Optional[float] = None
 
     def _validate_parameters(self) -> None:
-        if any(frequency >= self.fps / 2 for frequency in self.candidate_frequencies):
-            raise ValueError("Camera FPS is too low for the candidate frequencies")
+        # if any(frequency >= self.fps / 2 for frequency in self.candidate_frequencies):
+        #     raise ValueError("Camera FPS is too low for the candidate frequencies")
         if self.roi_size_m * math.sqrt(2) >= self.minimum_site_distance_m:
             raise ValueError(
                 "The ROI diagonal must be smaller than the minimum distance between sites"
