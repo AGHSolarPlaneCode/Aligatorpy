@@ -42,7 +42,7 @@ loiter_points = [
 ]
 
 break_points = [
-    (50.2685648,18.6733460)
+    (50.2685373,18.6730886)
 ]
 landing_sites = []
 collecting = False
