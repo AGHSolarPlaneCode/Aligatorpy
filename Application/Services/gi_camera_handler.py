@@ -9,7 +9,7 @@ import numpy as np
 
 # ── Configuration ────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 640, 400
-FPS_SOURCE = 200
+FPS_SOURCE = 240
 FORMAT = "GRAY16_LE"
 FPS_STREAM = 30
 FPS_LOW = 10
