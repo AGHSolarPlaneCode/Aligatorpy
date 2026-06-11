@@ -22,20 +22,38 @@ class DroniadaOokMissionOrchestrator:
     Misja OOK bez wstępnej detekcji LED — lista lądowisk z config.toml.
 
     Przepływ:
+    0. Start kamery przy tworzeniu orchestratora (przed połączeniem MAVLink).
     1. Lot do modulation_start_wp (misja bazowa w MP).
     2. Dopisanie par WAYPOINT + NAV_LOITER_TIME (15 s zawisu, 10 s detekcji OOK).
     3. Wybór lądowisk po częstotliwościach (desired) i ustawienie waypointów zrzutu.
     """
 
-    def __init__(self, dry_run: bool = False, camera: CameraPipeline | None = None):
+    def __init__(
+        self,
+        dry_run: bool = False,
+        camera: CameraPipeline | None = None,
+        auto_start_camera: bool = True,
+    ):
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
+        self.camera = camera or CameraPipeline()
+        if auto_start_camera:
+            self._init_camera()
+        self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
         #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
         self.drone = MatekService("tcp:192.168.161.52:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
-        self.camera = camera or CameraPipeline()
         self.mission_cfg = cfg.mission
+
+    def _init_camera(self) -> None:
+        self.logger.info("Starting camera pipeline")
+        self.camera.start()
+        self.camera.set_10fps_active(True)
+        if not self.camera.wait_ready():
+            self.logger.warning("Camera pipeline started but no frame yet")
+        else:
+            self.logger.info("Camera ready")
 
     def _landing_sites_as_targets(self) -> List[Dict[str, Any]]:
         return [
@@ -98,6 +116,7 @@ class DroniadaOokMissionOrchestrator:
 
                 current_loiter_idx += 1
 
+            self.camera.get_image()
             time.sleep(0.2)
 
         return ook_results
@@ -109,15 +128,12 @@ class DroniadaOokMissionOrchestrator:
             return {"targets": [], "landing_sites": []}
 
         self.drone.set_telemetry_rate(10)
-        self.camera.start()
-        self.camera.set_10fps_active(True)
-        if not self.camera.wait_ready():
-            self.logger.warning("Camera pipeline started but no frame yet")
 
         try:
             start_wp = self.mission_cfg.modulation_start_wp
             self.logger.info(f"Waiting for modulation start wp {start_wp}")
             while True:
+                self.camera.get_image()
                 curr_wp = self.drone.get_mission_status()
                 if curr_wp == start_wp:
                     break
