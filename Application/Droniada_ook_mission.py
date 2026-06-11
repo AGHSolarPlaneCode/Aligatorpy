@@ -40,6 +40,8 @@ class DroniadaOokMissionOrchestrator:
         if auto_start_camera:
             self._init_camera()
         self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
+        self.drone = MatekService("tcp:192.168.161.52:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
         self.mission_cfg = cfg.mission
