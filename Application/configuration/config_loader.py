@@ -69,12 +69,19 @@ class OokConfig:
     brightness_threshold: int
 
 @dataclass(frozen=True)
+class LandingSiteConfig:
+    lat: float
+    lon: float
+
+@dataclass(frozen=True)
 class MissionConfig:
     start_wp: int
     stop_wp: int
     is_bottle: bool
+    modulation_start_wp: int
     loiter: LoiterConfig
     ook: OokConfig
+    landing_sites: tuple[LandingSiteConfig, ...]
 
 
 class Config:
@@ -160,10 +167,14 @@ class Config:
             mission = data["mission"]
             loiter = mission["loiter"]
             ook = mission["ook"]
+            landing_sites_raw = mission.get("landing_sites", [])
             self.mission = MissionConfig(
                 start_wp=mission["start_wp"],
                 stop_wp=mission["stop_wp"],
                 is_bottle=mission["is_bottle"],
+                modulation_start_wp=mission.get(
+                    "modulation_start_wp", mission["start_wp"]
+                ),
                 loiter=LoiterConfig(
                     time=loiter["time"],
                     alt=loiter["alt"],
@@ -176,6 +187,10 @@ class Config:
                     min_confidence=ook["min_confidence"],
                     roi_size=ook["roi_size"],
                     brightness_threshold=ook["brightness_threshold"],
+                ),
+                landing_sites=tuple(
+                    LandingSiteConfig(lat=site["lat"], lon=site["lon"])
+                    for site in landing_sites_raw
                 ),
             )
 

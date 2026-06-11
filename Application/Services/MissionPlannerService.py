@@ -61,6 +61,40 @@ class MissionPlannerService:
         return waypoints
 
     @staticmethod
+    def build_approach_and_loiter_waypoints(
+        ordered_targets: List[Dict[str, Any]],
+        loiter_cfg: LoiterConfig,
+    ) -> List[Dict[str, Any]]:
+        """Para WAYPOINT (dojazd) + NAV_LOITER_TIME (zawis) na każde lądowisko."""
+        waypoints: List[Dict[str, Any]] = []
+        for target in ordered_targets:
+            waypoints.append(
+                {
+                    "command": "WAYPOINT",
+                    "lat": target["lat"],
+                    "lon": target["lon"],
+                    "alt": loiter_cfg.alt,
+                    "acr": 0,
+                }
+            )
+            waypoints.append(
+                {
+                    "command": "NAV_LOITER_TIME",
+                    "lat": target["lat"],
+                    "lon": target["lon"],
+                    "alt": loiter_cfg.alt,
+                    "time": loiter_cfg.time,
+                    "radius": loiter_cfg.radius,
+                }
+            )
+        return waypoints
+
+    @staticmethod
+    def loiter_wp_indices(first_approach_wp: int, site_count: int) -> List[int]:
+        """Indeksy LOITER w misji z parami WAYPOINT+LOITER (LOITER co drugi wp)."""
+        return [first_approach_wp + 2 * i + 1 for i in range(site_count)]
+
+    @staticmethod
     def _freq_matches(detected: float, desired: float, tolerance: float = 0.01) -> bool:
         return abs(float(detected) - float(desired)) <= tolerance
 

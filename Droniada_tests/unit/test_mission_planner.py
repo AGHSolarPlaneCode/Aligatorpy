@@ -32,6 +32,22 @@ class TestMissionPlannerService(unittest.TestCase):
         self.assertEqual(wps[0]["time"], 15)
         self.assertEqual(wps[0]["alt"], 60)
 
+    def test_build_approach_and_loiter_waypoints(self):
+        targets = [
+            {"lat": 50.0, "lon": 19.0},
+            {"lat": 50.1, "lon": 19.1},
+        ]
+        wps = self.planner.build_approach_and_loiter_waypoints(targets, self.loiter)
+        self.assertEqual(len(wps), 4)
+        self.assertEqual(wps[0]["command"], "WAYPOINT")
+        self.assertEqual(wps[1]["command"], "NAV_LOITER_TIME")
+        self.assertEqual(wps[1]["time"], 15)
+        self.assertEqual(wps[3]["command"], "NAV_LOITER_TIME")
+
+    def test_loiter_wp_indices(self):
+        indices = self.planner.loiter_wp_indices(first_approach_wp=10, site_count=3)
+        self.assertEqual(indices, [11, 13, 15])
+
     def test_build_landing_sites_filters_by_confidence(self):
         targets = [
             {"lat": 50.0, "lon": 19.0},
