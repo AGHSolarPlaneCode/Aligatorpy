@@ -11,16 +11,16 @@ wind_direction = 270
 altitude = 60
 
 [drops.beacon]
-mass = 500
-cd = 1
-drop_course = 10
+mass = 0.25
+cd = 0.5
+drop_course = 120
 x_translation = -59.73950087139867
 y_translation = 4.115124782150331
 
 [drops.bottle]
-mass = 500
-cd = 0.2
-drop_course = 10
+mass = 0.25
+cd = 0.5
+drop_course = 120
 x_translation = -66.33412669407143
 y_translation = 1.4164683264821387
 
