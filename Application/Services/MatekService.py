@@ -12,9 +12,10 @@ from Application.Logger.log_module import get_logger
 
 
 class MatekService:
-    BOTTLE_SERVO_CHANNEL = 9
-    BEACON_SERVO_CHANNEL = 8
-    PWM_DROP_SERVO = 800
+    SERVO_CHANNEL_LEFT = 5
+    SERVO_CHANNEL_RIGHT = 6
+    PWM_DROP_LEFT = 1900
+    PWM_DROP_RIGHT = 1100
     
     """
     Example usage:
@@ -197,6 +198,7 @@ class MatekService:
             "WAYPOINT": 16,
             "SET_SERVO": 183,
             "TAKEOFF": 22,
+            "RTL": 20,
             "NAV_LOITER_UNLIM": mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
             "NAV_LOITER_TIME": mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
         }
@@ -333,6 +335,17 @@ class MatekService:
                         int(wp["lat"] * 1e7),
                         int(wp["lon"] * 1e7),
                         wp["alt"]
+                    )
+                elif cmd == 20:  # RTL
+                    self.master.mav.mission_item_int_send(
+                        self.master.target_system,
+                        self.master.target_component,
+                        idx_to_send,
+                        mavutil.mavlink.MAV_FRAME_MISSION,
+                        mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                        is_current,
+                        1,
+                        0, 0, 0, 0, 0, 0, 0
                     )
                 else:
                     self.logger.error(f"Unknown command in waypoint {i}: {wp['command']}")
@@ -633,7 +646,9 @@ class MatekService:
         """
         current = self._recv_autopilot_message('MISSION_CURRENT', timeout=3)
         if current:
+            self.logger.warning(f"Current mission item index: {current}")
             return current.seq
+        self.logger.warning("No mission status received")
         return None
 
     def wait_for_command_ack(self, command: int, timeout: int = 5) -> bool:

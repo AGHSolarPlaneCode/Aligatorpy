@@ -5,24 +5,24 @@ baud = 115200
 mav_version = 2
 
 [drops]
-cruise_speed = 20
+cruise_speed = 0
 wind_speed = 5
 wind_direction = 270
-altitude = 60
+altitude = 50
 
 [drops.beacon]
 mass = 500
-cd = 1
-drop_course = 10
-x_translation = -59.73950087139867
-y_translation = 4.115124782150331
+cd = 0.55
+drop_course = 120
+x_translation = 1.888937981556584e-16
+y_translation = 1.028289943338078
 
 [drops.bottle]
 mass = 500
-cd = 0.2
-drop_course = 10
-x_translation = -66.33412669407143
-y_translation = 1.4164683264821387
+cd = 0.55
+drop_course = 120
+x_translation = 3.0149249673174517e-16
+y_translation = 1.6412487091061998
 
 [camera]
 resolution = [
@@ -65,11 +65,11 @@ targets_file = "media/droniada_targets.json"
 debug_mode = false
 
 [zones]
-search_zone_path = "gliwice.poly"
+search_zone_path = "gliwice_big_debug.poly"
 
 [mission]
-start_wp = 3
-stop_wp = 4
+start_wp = 4
+stop_wp = 6
 is_bottle = true
 
 [mission.loiter]
@@ -103,8 +103,8 @@ min_confidence = 4.0
 roi_size = 40
 brightness_threshold = 220
 desired = [
-    4,
-    8,
-    10,
+    12,
+    12,
+    12,
     25,
 ]

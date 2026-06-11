@@ -53,7 +53,7 @@ SWEEP_ROLL = 80.0
 SWEEP_PITCH = 80.0
 SWEEP_YAW = 45.0
 
-OUTPUT = None          # np. "media/projection_map.png"
+OUTPUT = "media/projection_map.png"
 SHOW = True
 
 

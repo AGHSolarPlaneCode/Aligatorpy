@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import json
+import json
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -19,7 +20,6 @@ from Application.Services.OokDetectionService import OokDetectionService
 from Application.configuration.config_loader import cfg
 
 
-
 class DroniadaMissionOrchestrator:
     """
     Orchestrator misji zawodów — jeden UART, jeden wątek MAVLink.
@@ -31,7 +31,7 @@ class DroniadaMissionOrchestrator:
         self.logger = get_logger(__name__)
         self.dry_run = dry_run
         #self.drone = MatekService(device=cfg.mav.device, baud=cfg.mav.baud)
-        self.drone = MatekService(device="tcp:192.168.173.52:5763")
+        self.drone = MatekService(device="tcp:192.168.161.52:5763")
         self.mission = MissionService(self.drone)
         self.planner = MissionPlannerService()
         self.camera = camera or CameraPipeline()
@@ -89,6 +89,7 @@ class DroniadaMissionOrchestrator:
         ordered_targets: List[Dict[str, Any]],
         loiter_start_wp: int,
     ) -> List[Dict[str, Any]]:
+        
         ook_service = OokDetectionService(self.camera)
         ook_results: List[Dict[str, Any]] = []
 
@@ -101,16 +102,18 @@ class DroniadaMissionOrchestrator:
         )
 
         while current_loiter_idx < loiter_count:
+            
             curr_wp = self.drone.get_mission_status()
-
+            
             expected_wp = loiter_start_wp + current_loiter_idx
+            self.logger.info(f"LOITER/OOK phase - current waypoint: {curr_wp}, "f"expecting {expected_wp}")
+
             if curr_wp == expected_wp:
                 target = ordered_targets[current_loiter_idx]
                 self.logger.info(
                     f"At LOITER wp {curr_wp} over target "
                     f"({target['lat']:.6f}, {target['lon']:.6f}) — starting OOK"
                 )
-
                 ook_result = ook_service.detect_modulation()
                 ook_results.append(ook_result)
 
@@ -128,9 +131,6 @@ class DroniadaMissionOrchestrator:
                     )
 
                 current_loiter_idx += 1
-
-            if curr_wp >= loiter_end_wp:
-                break
 
             time.sleep(0.2)
 
@@ -190,7 +190,8 @@ class DroniadaMissionOrchestrator:
             )
 
             if landing_sites and not self.dry_run:
-                self.drone.send_landing_sites(landing_sites)
+                self.mission.process_landing_sites_drone(landing_sites)
+                #self.drone.send_landing_sites(landing_sites)
             elif landing_sites:
                 self.logger.info(f"[dry-run] Would send {len(landing_sites)} landing sites")
             elif self.mission_cfg.ook.desired:

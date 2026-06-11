@@ -11,7 +11,7 @@ except ImportError:  # pragma: no cover
 class LedDetector:
     THRESHOLD_VALUE = 210
     MIN_AREA = 3
-    MAX_AREA = 500
+    MAX_AREA = 150
     MERGE_RADIUS = 25
 
     # Przycięcie krawędzi (dystorsja fisheye) — tylko w analizie Python, nie w kamerze.

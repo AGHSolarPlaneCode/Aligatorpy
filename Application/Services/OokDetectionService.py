@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from multiprocessing import Process, Queue
 from typing import Any, Dict, Optional
@@ -11,6 +12,32 @@ from Application.OOK_detection.ook import ook_brightness
 from Application.OOK_detection.ook_worker import run_ook_worker
 from Application.Services.gi_camera_handler import CameraPipeline
 from Application.configuration.config_loader import OokConfig, cfg
+
+# #region agent log
+_DEBUG_LOG_PATH = "/home/pi/Samoloty/Aligatorpy/.cursor/debug-0a80c5.log"
+
+
+def _agent_log(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict | None = None,
+    run_id: str = "pre-fix",
+) -> None:
+    entry = {
+        "sessionId": "0a80c5",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+        "runId": run_id,
+    }
+    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+# #endregion
 
 
 class OokDetectionService:
@@ -35,6 +62,15 @@ class OokDetectionService:
         return frame[y1:y2, x1:x2]
 
     def detect_modulation(self) -> Dict[str, Any]:
+        # #region agent log
+        _agent_log(
+            "H6",
+            "OokDetectionService.py:detect_modulation:entry",
+            "detect_modulation entered",
+            {"duration_s": self.config.duration_s},
+            run_id="post-fix",
+        )
+        # #endregion
         self.camera.set_120fps_active(True)
 
         sample_queue = Queue()
@@ -69,6 +105,15 @@ class OokDetectionService:
 
         if result_queue.empty():
             self.logger.warning("OOK worker returned no result")
+            # #region agent log
+            _agent_log(
+                "H6",
+                "OokDetectionService.py:detect_modulation:exit",
+                "detect_modulation no result",
+                {"samples_sent": samples_sent},
+                run_id="post-fix",
+            )
+            # #endregion
             return {"freq": None, "confidence": 0.0, "samples": samples_sent}
 
         result = result_queue.get()
@@ -76,4 +121,17 @@ class OokDetectionService:
             f"OOK result: freq={result['freq']}Hz, "
             f"confidence={result['confidence']:.2f}, samples={result['samples']}"
         )
+        # #region agent log
+        _agent_log(
+            "H6",
+            "OokDetectionService.py:detect_modulation:exit",
+            "detect_modulation finished",
+            {
+                "freq": result.get("freq"),
+                "confidence": result.get("confidence"),
+                "samples_sent": samples_sent,
+            },
+            run_id="post-fix",
+        )
+        # #endregion
         return result
