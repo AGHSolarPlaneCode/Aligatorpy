@@ -7,10 +7,7 @@ from Application.Services.MissionService import MissionService
 plane = MatekService(device="tcp:localhost:5771")
 mission = MissionService(plane)
 
-sites = [(50.2683316, 18.6695051),
-    (50.2707181, 18.6691618),
-    (50.270752, 18.676794),
-    (50.2685510, 18.6979151)]
+sites = [(50.2683316, 18.6695051)]
 loiter_points = [
     (50.2683316, 18.6695051),
     (50.2707181, 18.6691618),
@@ -25,6 +22,6 @@ break_points = [
 ]
 
 
-mission.process_landing_sites(sites, loiter_points, break_points)
+mission.process_landing_sites_plane(sites, break_points)
 
 print("Done")
