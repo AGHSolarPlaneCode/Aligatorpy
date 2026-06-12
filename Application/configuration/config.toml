@@ -6,23 +6,23 @@ mav_version = 2
 
 [drops]
 cruise_speed = 20
-wind_speed = 5
+wind_speed = 55
 wind_direction = 270
 altitude = 60
 
 [drops.beacon]
 mass = 250
-cd = 0.5
-drop_course = 120
-x_translation = -59.73950087139867
-y_translation = 4.115124782150331
+cd = 0.55
+drop_course = 300
+x_translation = -47.74427259310985
+y_translation = 93.65325036894797
 
 [drops.bottle]
 mass = 250
-cd = 0.5
-drop_course = 120
-x_translation = -54.88713394160302
-y_translation = 6.228216514599258
+cd = 0.55
+drop_course = 300
+x_translation = -40.26223438516894
+y_translation = 126.32885544078542
 
 [camera]
 resolution = [
