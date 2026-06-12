@@ -42,7 +42,7 @@ loiter_points = [
 ]
 
 break_points = [
-    (50.2685373,18.6730886)
+    (50.2697877, 18.672103)
 ]
 landing_sites = []
 collecting = False
@@ -68,7 +68,7 @@ def handle_landing(mission):
             for lat, lon in landing_sites:
                 f.write(f"{lat},{lon}\n")
         logger.info("[LANDING] Zapisano lądowiska do landing_sites.txt")
-        mission.process_landing_sites(landing_sites, loiter_points, break_points)
+        mission.process_landing_sites_plane(landing_sites, break_points)
         logger.info("[LANDING] Gotowe")
     except Exception as e:
         logger.info(f"[LANDING] Błąd: {type(e).__name__}: {e}")
