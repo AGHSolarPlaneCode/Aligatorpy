@@ -12,10 +12,10 @@ from Application.Logger.log_module import get_logger
 
 
 class MatekService:
-    SERVO_CHANNEL_RIGHT = 9
+    SERVO_CHANNEL_RIGHT = 5
     SERVO_CHANNEL_LEFT = 8
-    PWM_DROP_RIGHT = 1000
-    PWM_DROP_LEFT = 1000
+    PWM_DROP_RIGHT = 1100
+    PWM_DROP_LEFT = 1100
     """
     Example usage:
     # Initialize connection\n
