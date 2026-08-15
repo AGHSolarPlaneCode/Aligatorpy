@@ -87,7 +87,7 @@ def main():
                          help="Apply dark/gain calibration if available (default)")
     parser.add_argument("--no-calibrate", dest="calibrate", action="store_false",
                          help="Skip calibration — debayer only")
-    parser.add_argument("--target-mean", type=float, default=0.45, help="Target mean brightness for AWB/gamma step")
+    parser.add_argument("--target-mean", type=float, default=0.15, help="Target mean brightness for AWB/gamma step")
     parser.add_argument("--sat-boost", type=float, default=1.35, help="Saturation multiplier")
     parser.add_argument("--denoise", choices=["bilateral", "nlm"], default=None,
                          help="Optional denoise pass after debayer (nlm is usually better but slower)")
@@ -96,6 +96,11 @@ def main():
                          help="Subfolder (inside the flight folder) to write .jpg output and CSV into")
     parser.add_argument("--overwrite", action="store_true",
                          help="Reprocess frames even if the output .jpg already exists")
+    parser.add_argument("--sharpen", type=float, default=1.0,
+                         help="Unsharp mask amount (0 = off)")
+    parser.add_argument("--sharpen-radius", type=float, default=3)
+    parser.add_argument("--channel-gains", type=float, nargs=3,
+                          metavar=("R", "G", "B"), default=[1.5922, 1.0, 1.3440])
     args = parser.parse_args()
 
     flight_dir = Path(os.path.expanduser(args.flight_dir))
@@ -161,6 +166,9 @@ def main():
                 sat_boost=args.sat_boost,
                 denoise_method=args.denoise,
                 denoise_strength=args.denoise_strength,
+                sharpen_amount=args.sharpen,          # <-- dodaj
+                sharpen_radius=args.sharpen_radius,   # <-- dodaj
+                channel_gains=args.channel_gains,     # <-- dodaj
             )
             cv2.imwrite(str(jpg_path), bgr8)
             processed += 1
